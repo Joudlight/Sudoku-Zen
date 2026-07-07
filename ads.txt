@@ -1,0 +1,6 @@
+# Ads.txt for Sudoku Zen
+# Replace the line below with your Google AdSense publisher ID once approved
+# google.com, pub-XXXXXXXXXXXXXX, DIRECT, f08c47fec0942fa0
+
+# Example for future ad networks:
+# amazon-adsystem.com, XXXXX, DIRECT, XXX

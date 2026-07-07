@@ -1,0 +1,4 @@
+# Sudoku Zen - robots.txt
+User-agent: *
+Allow: /
+Sitemap: https://sudokuzen.app/sitemap.xml
