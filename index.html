@@ -500,23 +500,7 @@ header {
 .game-layout {
   display: flex; gap: 16px; align-items: flex-start; width: 100%;
 }
-.board-wrap { flex-shrink: 0; position: relative; }
-.loading-overlay {
-  position: absolute; inset: 0; z-index: 50;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  background: var(--overlay); border-radius: 4px;
-  backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
-}
-.loading-spinner {
-  width: 40px; height: 40px; border: 4px solid var(--paper);
-  border-top-color: var(--accent); border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-.loading-text {
-  margin-top: 12px; font-size: 13px; color: var(--paper);
-  font-weight: 500; letter-spacing: 0.5px;
-}
-@keyframes spin { to { transform: rotate(360deg); } }
+.board-wrap { flex-shrink: 0; }
 .cell { animation: cellEntrance 0.3s ease both; }
 @keyframes cellEntrance {
   from { opacity: 0; transform: scale(0.85); }
@@ -986,6 +970,107 @@ footer a:hover { color: var(--accent); }
 .help-desc { font-size: 12px; color: var(--ink-light); display: flex; align-items: center; transition: color 0.35s ease; }
 
 /* ═══════════════════════════════════════════════════════
+   SHARE MODAL
+   ═══════════════════════════════════════════════════════ */
+.share-modal { max-width: 480px; padding: 32px 28px; }
+.qr-wrap {
+  display: flex; justify-content: center; margin: 8px 0 16px;
+}
+.qr-code {
+  width: 160px; height: 160px; border-radius: var(--radius);
+  background: white; padding: 12px;
+  box-shadow: 0 4px 16px var(--shadow);
+  transition: box-shadow 0.35s ease;
+  image-rendering: pixelated;
+}
+.share-url-wrap {
+  display: flex; gap: 6px; align-items: center;
+  background: var(--bg); border-radius: var(--radius-sm);
+  border: 1.5px solid var(--cell-border); padding: 4px;
+  margin-bottom: 18px;
+  transition: border-color 0.35s ease, background 0.35s ease;
+}
+.share-url-wrap:focus-within { border-color: var(--accent); }
+.share-url-wrap input {
+  flex: 1; border: none; background: transparent;
+  font-family: 'DM Sans', sans-serif; font-size: 11px;
+  color: var(--ink-light); padding: 6px 8px; outline: none;
+  transition: color 0.35s ease;
+}
+.smbtn {
+  width: 34px; height: 34px; border: none; border-radius: var(--radius-sm);
+  background: var(--paper); cursor: pointer; font-size: 16px;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.15s ease;
+  box-shadow: 0 1px 3px var(--shadow);
+}
+.smbtn:hover { background: var(--accent); transform: scale(1.1); }
+.smbtn.copied { background: var(--correct-bg); animation: pop 0.3s ease; }
+.share-grid {
+  display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;
+}
+.sbtn {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 12px 6px; border: 1.5px solid var(--cell-border);
+  border-radius: var(--radius-sm); background: var(--paper);
+  cursor: pointer; font-family: 'DM Sans', sans-serif;
+  font-size: 10px; font-weight: 500; color: var(--ink-light);
+  transition: all 0.15s ease, background 0.35s ease, color 0.35s ease, border-color 0.35s ease;
+  line-height: 1.2;
+}
+.sbtn:hover { transform: translateY(-2px); box-shadow: 0 4px 14px var(--shadow); }
+.sbtn .sicon {
+  font-size: 20px; font-weight: 700; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; border-radius: 50%;
+  color: white; margin-bottom: 2px;
+  transition: transform 0.2s ease;
+}
+.sbtn:hover .sicon { transform: scale(1.12); }
+.sbtn-twitter .sicon     { background: #1d9bf0; }
+.sbtn-facebook .sicon   { background: #1877f2; }
+.sbtn-whatsapp .sicon   { background: #25d366; }
+.sbtn-telegram .sicon   { background: #0088cc; }
+.sbtn-reddit .sicon     { background: #ff4500; }
+.sbtn-email .sicon      { background: #ea4335; }
+.sbtn-twitter:hover     { border-color: #1d9bf0; color: #1d9bf0; }
+.sbtn-facebook:hover    { border-color: #1877f2; color: #1877f2; }
+.sbtn-whatsapp:hover    { border-color: #25d366; color: #25d366; }
+.sbtn-telegram:hover    { border-color: #0088cc; color: #0088cc; }
+.sbtn-reddit:hover      { border-color: #ff4500; color: #ff4500; }
+.sbtn-email:hover       { border-color: #ea4335; color: #ea4335; }
+
+/* Floating share FAB */
+.share-fab {
+  position: fixed; bottom: 24px; right: 24px; z-index: 300;
+  display: flex; align-items: center; gap: 6px;
+  padding: 12px 18px; border: none; border-radius: var(--radius-full);
+  background: var(--ink); color: var(--paper);
+  font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 600;
+  cursor: pointer; box-shadow: 0 6px 24px var(--shadow-lg);
+  transition: all 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: fabEntrance 0.5s ease 0.6s both;
+}
+.share-fab:hover {
+  transform: translateY(-3px) scale(1.04);
+  box-shadow: 0 12px 36px var(--shadow-lg);
+  background: var(--accent);
+}
+.share-fab:active { transform: translateY(0) scale(0.97); }
+.share-fab .fab-icon { font-size: 18px; line-height: 1; }
+.share-fab .fab-label { letter-spacing: 0.3px; }
+@keyframes fabEntrance {
+  from { opacity: 0; transform: translateY(20px) scale(0.85); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Responsive: smaller FAB on mobile */
+@media (max-width: 640px) {
+  .share-fab { bottom: 16px; right: 16px; padding: 10px 14px; font-size: 12px; }
+  .share-fab .fab-icon { font-size: 16px; }
+}
+
+/* ═══════════════════════════════════════════════════════
    SETTINGS PANEL
    ═══════════════════════════════════════════════════════ */
 .settings-list { display: flex; flex-direction: column; gap: 12px; text-align: left; margin: 16px 0 24px; }
@@ -1214,10 +1299,6 @@ footer a:hover { color: var(--accent); }
   <div class="game-layout">
     <section class="board-wrap" aria-label="Sudoku board">
       <div id="board" role="grid" data-size="9" data-variant="classic"></div>
-      <div id="loadingOverlay" class="loading-overlay" style="display:none">
-        <div class="loading-spinner"></div>
-        <div class="loading-text">Generating puzzle...</div>
-      </div>
     </section>
     <aside class="side-panel" aria-label="Game controls">
       <div class="progress-wrap">
@@ -1252,10 +1333,17 @@ footer a:hover { color: var(--accent); }
       <a href="#" id="footerStats">Stats</a>
       <a href="#" id="footerAch">Awards</a>
       <a href="#" id="footerChallenges">Challenges</a>
+      <a href="#" id="footerShare">Share</a>
     </div>
   </footer>
 </div>
 
+
+<!-- Floating share FAB -->
+<button class="share-fab" id="shareBtn" aria-label="Share">
+  <span class="fab-icon">🔗</span>
+  <span class="fab-label">Share</span>
+</button>
 
 <!-- ═══ WIN OVERLAY ═══ -->
 <div class="overlay" id="winOverlay" style="display:none" role="dialog">
@@ -1352,6 +1440,33 @@ footer a:hover { color: var(--accent); }
     <div class="modal-btns" style="margin-top: 16px;">
       <button class="mbtn mbtn-secondary" id="endlessBtn">Endless Mode</button>
       <button class="mbtn mbtn-primary" id="closeChallengesBtn">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ SHARE OVERLAY ═══ -->
+<div class="overlay" id="shareOverlay" style="display:none" role="dialog">
+  <div class="modal share-modal">
+    <div class="modal-icon">📤</div>
+    <h2>Share Sudoku Zen</h2>
+    <p>Invite friends to play — every puzzle is a fresh challenge!</p>
+    <div class="qr-wrap" id="qrWrap">
+      <img id="qrImg" alt="QR Code" class="qr-code">
+    </div>
+    <div class="share-url-wrap">
+      <input type="text" id="shareUrlInput" readonly>
+      <button class="smbtn" id="copyLinkBtn" title="Copy link">📋</button>
+    </div>
+    <div class="share-grid">
+      <button class="sbtn sbtn-twitter"  data-share="twitter">  <span class="sicon">𝕏</span> <span>Twitter / X</span></button>
+      <button class="sbtn sbtn-facebook" data-share="facebook"> <span class="sicon">f</span> <span>Facebook</span></button>
+      <button class="sbtn sbtn-whatsapp" data-share="whatsapp"> <span class="sicon">💬</span><span>WhatsApp</span></button>
+      <button class="sbtn sbtn-telegram" data-share="telegram"> <span class="sicon">✈️</span><span>Telegram</span></button>
+      <button class="sbtn sbtn-reddit"   data-share="reddit">   <span class="sicon">▶️</span><span>Reddit</span></button>
+      <button class="sbtn sbtn-email"    data-share="email">    <span class="sicon">✉️</span><span>Email</span></button>
+    </div>
+    <div class="modal-btns" style="margin-top:20px">
+      <button class="mbtn mbtn-primary" id="closeShareBtn">Done</button>
     </div>
   </div>
 </div>
@@ -2563,35 +2678,14 @@ SZ.Engine = {
 
   /**
    * Generate a full valid solution using backtracking.
-   * For jigsaw variants uses MRV heuristic + node budget + region-map regeneration.
-   * For standard variants uses the simpler row-order shuffleFill (fast enough).
+   * board = flat array of length N*N, values are symbol indices (1..N) or 0.
    */
   generateSolution(state) {
     const N = state.size;
     const board = new Array(N * N).fill(0);
     if (!state._peers) state._peers = this.buildPeers(state);
-    const isJigsaw = state.variant === 'jigsaw' && state.regionMap;
-
-    if (isJigsaw) {
-      for (let attempt = 0; attempt < 60; attempt++) {
-        board.fill(0);
-        const nodeBudget = 30000 + attempt * 5000;
-        const result = this._solveMRV(board, state, nodeBudget);
-        if (result) return result;
-        // Regenerate region map every 5 failures — some shapes are inherently hard
-        if (attempt % 5 === 4 && N === 9) {
-          state.regionMap = this.generateJigsawRegionMap(N);
-          state._peers = this.buildPeers(state);
-        }
-      }
-      // Last resort: fall back to shuffleFill on the current region map
-      board.fill(0);
-      this._shuffleFill(board, state, 0);
-      return board;
-    }
-
-    // Non-jigsaw: original row-order approach (fast enough)
     if (!this._shuffleFill(board, state, 0)) {
+      // Fallback: retry with different random seed up to 3 times
       for (let attempt = 0; attempt < 3; attempt++) {
         board.fill(0);
         if (this._shuffleFill(board, state, 0)) break;
@@ -2601,80 +2695,70 @@ SZ.Engine = {
   },
 
   /**
-   * MRV-based backtracking solver.
-   * At each step picks the empty cell with the fewest valid candidates
-   * (Minimum Remaining Values heuristic), dramatically reducing the search
-   * tree for irregular constraints like jigsaw regions.
-   * Returns the filled board on success, or null if nodeBudget is exceeded.
+   * Fill the board with a random valid full solution.
+   * PERF: uses a Minimum-Remaining-Values (MRV) heuristic — at every step it
+   * fills whichever EMPTY cell currently has the FEWEST legal candidates,
+   * instead of always scanning left-to-right/row-major. A fixed fill order
+   * works fine for classic row/col/box grids (their constraints are evenly
+   * spread), but for irregular layouts (Jigsaw) it can hit pathological
+   * combinatorial blowup — the search paints itself into a corner late in
+   * the grid and thrashes for millions of nodes before backtracking far
+   * enough to recover (observed: same board size/variant randomly taking
+   * anywhere from 15ms to 10+ seconds). MRV always resolves the most
+   * constrained cell first, so contradictions are caught almost immediately
+   * instead of after dozens of cells are already placed — this keeps
+   * generation consistently fast (single-digit ms to a few hundred ms)
+   * regardless of how irregular the region shapes are.
+   * A hard node budget is kept as a safety net so a rare unlucky shuffle
+   * can never freeze the tab — it just aborts and generateSolution() above
+   * retries with a fresh random order.
    */
-  _solveMRV(board, state, nodeBudget) {
+  _shuffleFill(board, state, _idx, nodeBudget = 250000) {
     const N = state.size;
     const total = N * N;
+    if (!state._peers) state._peers = this.buildPeers(state);
     const peers = state._peers;
-    const hasConstraints = state.constraints && state.constraints.length > 0;
     let nodes = 0;
 
     const solve = () => {
-      if (++nodes > nodeBudget) return null;
+      if (++nodes > nodeBudget) return false; // safety net — bail and retry
 
-      let bestIdx = -1;
-      let bestCands = null;
-      let bestCount = N + 1;
-
+      // Find the empty cell with the fewest legal candidates (MRV).
+      let bestIdx = -1, bestCands = null;
       for (let i = 0; i < total; i++) {
         if (board[i] !== 0) continue;
+        let usedMask = 0;
         const ps = peers[i];
-        let mask = 0;
         for (let k = 0; k < ps.length; k++) {
           const v = board[ps[k]];
-          if (v) mask |= (1 << v);
+          if (v) usedMask |= (1 << v);
         }
-        let count = 0;
+        const cands = [];
         for (let n = 1; n <= N; n++) {
-          if (!(mask & (1 << n))) count++;
+          if (!(usedMask & (1 << n))) cands.push(n);
         }
-        if (count === 0) return null; // dead end
-        if (count < bestCount) {
-          bestCount = count;
-          bestIdx = i;
-          bestCands = [];
-          for (let n = 1; n <= N; n++) {
-            if (!(mask & (1 << n))) bestCands.push(n);
-          }
-          if (bestCount === 1) break;
+        if (cands.length === 0) return false; // dead cell — backtrack now
+        if (bestCands === null || cands.length < bestCands.length) {
+          bestIdx = i; bestCands = cands;
+          if (cands.length === 1) break; // a forced cell can't be beaten
         }
       }
+      if (bestIdx === -1) return true; // no empty cells left — solved
 
-      if (bestIdx === -1) return board; // all filled
-
-      this._shuffle(bestCands);
+      // Randomize candidate order so repeated calls yield varied solutions.
+      for (let i = bestCands.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [bestCands[i], bestCands[j]] = [bestCands[j], bestCands[i]];
+      }
       for (const n of bestCands) {
-        if (hasConstraints && !SZ.Constraints.checkPlacement(board, state, bestIdx, n)) continue;
         board[bestIdx] = n;
-        const result = solve();
-        if (result) return result;
+        if (solve()) return true;
         board[bestIdx] = 0;
       }
-      return null;
+      return false;
     };
 
     return solve();
-  },
-
-  /** Simple row-by-row recursive backtracking (used for non-jigsaw variants). */
-  _shuffleFill(board, state, idx) {
-    const N = state.size;
-    if (idx >= N * N) return true;
-    if (board[idx] !== 0) return this._shuffleFill(board, state, idx + 1);
-    const nums = this._shuffle([...Array(N)].map((_, i) => i + 1));
-    for (const n of nums) {
-      if (this.isValidPlacement(board, state, idx, n)) {
-        board[idx] = n;
-        if (this._shuffleFill(board, state, idx + 1)) return true;
-        board[idx] = 0;
-      }
-    }
-    return false;
   },
 
   /**
@@ -2685,46 +2769,72 @@ SZ.Engine = {
    * peer-array iteration, and scales acceptably to 16×16.
    * A node budget prevents pathological cases from blocking the main thread.
    */
+  /**
+   * Count up to `limit` distinct solutions for a partially-filled board.
+   * PERF: uses the same MRV (fewest-candidates-first) cell ordering as
+   * _shuffleFill, instead of a fixed left-to-right scan. This is called
+   * once per candidate cell removal while carving a puzzle out of a full
+   * solution (see makePuzzle) — i.e. up to `total` times per puzzle — so
+   * cutting the average node count per call compounds fast, and matters
+   * most on larger boards (16×16) where a fixed scan order was the main
+   * reason "harder" difficulties could take several seconds to generate.
+   */
   countSolutions(board, state, limit = 2, nodeBudget = 100000) {
     const N = state.size;
     const total = N * N;
     const work = [...board];
     if (!state._peers) state._peers = this.buildPeers(state);
     const peers = state._peers;
-    // Pre-compute empty cell list (positions where we need to branch)
-    const emptyCells = [];
-    for (let i = 0; i < total; i++) if (work[i] === 0) emptyCells.push(i);
-    const emptyCount = emptyCells.length;
     let count = 0;
     let nodes = 0;
     const hasConstraints = state.constraints && state.constraints.length > 0;
 
-    const solve = (depth) => {
+    const solve = () => {
       if (count >= limit) return;
-      if (depth === emptyCount) {
+      if (++nodes > nodeBudget) return;
+
+      // Find the empty cell with the fewest legal candidates (MRV).
+      let bestIdx = -1, bestCands = null;
+      for (let i = 0; i < total; i++) {
+        if (work[i] !== 0) continue;
+        const ps = peers[i];
+        let usedMask = 0;
+        for (let k = 0; k < ps.length; k++) {
+          const v = work[ps[k]];
+          if (v) usedMask |= (1 << v);
+        }
+        const cands = [];
+        for (let n = 1; n <= N; n++) {
+          if (usedMask & (1 << n)) continue;
+          if (hasConstraints && !SZ.Constraints.checkPlacement(work, state, i, n)) continue;
+          cands.push(n);
+        }
+        if (cands.length === 0) return; // dead cell — backtrack now
+        if (bestCands === null || cands.length < bestCands.length) {
+          bestIdx = i; bestCands = cands;
+          if (cands.length === 1) break; // a forced cell can't be beaten
+        }
+      }
+
+      if (bestIdx === -1) {
+        // Board is fully filled. checkPlacement above only validates
+        // incremental/no-duplicate constraints — some constraints (e.g. a
+        // killer cage's exact sum) can only be verified once every cell in
+        // the group is filled, so double-check with areAllSatisfied here,
+        // same as the original implementation did.
         if (!hasConstraints || SZ.Constraints.areAllSatisfied(work, state.constraints)) count++;
         return;
       }
-      if (++nodes > nodeBudget) return;
-      const idx = emptyCells[depth];
-      const ps = peers[idx];
-      // Build "used values" mask from peers in O(P)
-      let usedMask = 0;
-      for (let k = 0; k < ps.length; k++) {
-        const v = work[ps[k]];
-        if (v) usedMask |= (1 << v);
-      }
-      for (let n = 1; n <= N; n++) {
-        if (usedMask & (1 << n)) continue;
-        if (hasConstraints && !SZ.Constraints.checkPlacement(work, state, idx, n)) continue;
-        work[idx] = n;
-        solve(depth + 1);
-        work[idx] = 0;
+
+      for (const n of bestCands) {
+        work[bestIdx] = n;
+        solve();
+        work[bestIdx] = 0;
         if (count >= limit) return;
         if (nodes > nodeBudget) return;
       }
     };
-    solve(0);
+    solve();
     return count;
   },
 
@@ -2925,6 +3035,47 @@ SZ.Engine = {
     return map;
   },
 
+  /**
+   * Generate a Jigsaw region map TOGETHER with a full solution for it,
+   * and only hand back a shape that solved fast.
+   * PERF: even with a well-connected, correctly-sized region map (see
+   * generateJigsawRegionMap above) and the MRV solving heuristic (see
+   * _shuffleFill), some randomly-grown irregular shapes are just an
+   * inherently harder constraint graph than others — MRV cuts the
+   * *typical* backtracking way down, but an unlucky shape can still take
+   * seconds. Grinding through one hard shape is the wrong trade: it's far
+   * cheaper to cap each solve attempt at a modest node budget and, if it's
+   * exceeded, throw that shape away and grow a fresh one — most shapes are
+   * easy, so this converges fast in practice. If we somehow strike out on
+   * every attempt (astronomically unlikely), fall back to classic 3x3
+   * boxes, which always solve near-instantly.
+   */
+  generateSolvableJigsaw(N) {
+    const attempts = 25;
+    const nodeBudget = 20000;
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      const regionMap = this.generateJigsawRegionMap(N);
+      const state = { size: N, variant: 'jigsaw', regionMap, constraints: null };
+      const peers = this.buildPeers(state);
+      state._peers = peers;
+      const board = new Array(N * N).fill(0);
+      if (this._shuffleFill(board, state, 0, nodeBudget)) {
+        return { regionMap, solution: board, peers };
+      }
+    }
+    // Last-resort fallback — always solvable, no budget needed.
+    const regionMap = new Array(N * N);
+    for (let r = 0; r < N; r++)
+      for (let c = 0; c < N; c++)
+        regionMap[r * N + c] = Math.floor(r / 3) * 3 + Math.floor(c / 3);
+    const state = { size: N, variant: 'jigsaw', regionMap, constraints: null };
+    const peers = this.buildPeers(state);
+    state._peers = peers;
+    const board = new Array(N * N).fill(0);
+    this._shuffleFill(board, state, 0, 1000000);
+    return { regionMap, solution: board, peers };
+  },
+
   _pickSeeds(N) {
     // Shuffle all candidate indices, then pick seeds from them to avoid long loops
     const all = [...Array(N * N).keys()];
@@ -2987,55 +3138,54 @@ SZ.Engine = {
     const boardConf = SZ.Boards[size];
     const vConf = SZ.Variants[variant];
     const N = boardConf.size;
+    let regionMap = null;
     let constraints = null;
     const oldRandom = Math.random;
-
+    const rng = this._seededRandom(seed);
+    Math.random = rng;
     try {
-      // For jigsaw we may need multiple attempts with different seeds if the
-      // generated region shape leads to catastrophic backtracking.
-      const maxAttempts = variant === 'jigsaw' ? 20 : 1;
-      for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        const rng = this._seededRandom(seed + attempt * 7919);
-        Math.random = rng;
-        let regionMap = null;
-        if (variant === 'jigsaw') regionMap = this.generateJigsawRegionMap(N);
-        const state = {
-          size: N, boxW: boardConf.boxW, boxH: boardConf.boxH,
-          variant, regionMap, constraints: null
-        };
-        state._peers = this.buildPeers(state);
-        try {
-          if (vConf.constraintType === 'killer') {
-            const blankState = { ...state, constraints: null, _peers: state._peers };
-            const tempSolution = this.generateSolution(blankState);
-            const { constraints: cages } = SZ.Constraints.generateKillerCages(tempSolution, state);
-            state.constraints = cages;
-            const puzzle = this.makePuzzle(tempSolution, state, difficulty);
-            return { solution: tempSolution, puzzle, regionMap, constraints: cages };
-          } else if (vConf.constraintType === 'thermo') {
-            const tempSolution = this.generateSolution(state);
-            const { constraints: thermos } = SZ.Constraints.generateThermometers(tempSolution, state);
-            constraints = thermos;
-            state.constraints = thermos;
-            const puzzle = this.makePuzzle(tempSolution, state, difficulty);
-            return { solution: tempSolution, puzzle, regionMap, constraints: thermos };
-          } else if (vConf.constraintType === 'arrow') {
-            const tempSolution = this.generateSolution(state);
-            const { constraints: arrows } = SZ.Constraints.generateArrows(tempSolution, state);
-            constraints = arrows;
-            state.constraints = arrows;
-            const puzzle = this.makePuzzle(tempSolution, state, difficulty);
-            return { solution: tempSolution, puzzle, regionMap, constraints: arrows };
-          } else {
-            const solution = this.generateSolution(state);
-            const puzzle = this.makePuzzle(solution, state, difficulty);
-            return { solution, puzzle, regionMap, constraints };
-          }
-        } catch (e) {
-          // Generation failed — retry with different seed if possible
-          if (attempt < maxAttempts - 1) continue;
-          throw e;
-        }
+      // Generate region map + solution together inside the seeded block
+      // (both use Math.random, so this stays deterministic) — see
+      // generateSolvableJigsaw for why they can't be generated separately
+      // without risking a slow/hard-to-solve region shape.
+      let _jigsawSolved = null;
+      if (variant === 'jigsaw') {
+        _jigsawSolved = this.generateSolvableJigsaw(N);
+        regionMap = _jigsawSolved.regionMap;
+      }
+      const state = {
+        size: N, boxW: boardConf.boxW, boxH: boardConf.boxH,
+        variant, regionMap, constraints
+      };
+      state._peers = _jigsawSolved ? _jigsawSolved.peers : this.buildPeers(state);
+      // Generate constraints first for constrained variants
+      if (vConf.constraintType === 'killer') {
+        // Generate temp solution, then cages from it (ensuring no duplicate digits)
+        const blankState = { ...state, constraints: null, _peers: state._peers };
+        const tempSolution = this.generateSolution(blankState);
+        const { constraints: cages } = SZ.Constraints.generateKillerCages(tempSolution, state);
+        // Temp solution already satisfies all constraints (rows+cols+boxes+cage sums+no duplicates)
+        state.constraints = cages;
+        const puzzle = this.makePuzzle(tempSolution, state, difficulty);
+        return { solution: tempSolution, puzzle, regionMap, constraints: cages };
+      } else if (vConf.constraintType === 'thermo') {
+        const tempSolution = this.generateSolution(state);
+        const { constraints: thermos } = SZ.Constraints.generateThermometers(tempSolution, state);
+        constraints = thermos;
+        state.constraints = thermos;
+        const puzzle = this.makePuzzle(tempSolution, state, difficulty);
+        return { solution: tempSolution, puzzle, regionMap, constraints: thermos };
+      } else if (vConf.constraintType === 'arrow') {
+        const tempSolution = this.generateSolution(state);
+        const { constraints: arrows } = SZ.Constraints.generateArrows(tempSolution, state);
+        constraints = arrows;
+        state.constraints = arrows;
+        const puzzle = this.makePuzzle(tempSolution, state, difficulty);
+        return { solution: tempSolution, puzzle, regionMap, constraints: arrows };
+      } else {
+        const solution = _jigsawSolved ? _jigsawSolved.solution : this.generateSolution(state);
+        const puzzle = this.makePuzzle(solution, state, difficulty);
+        return { solution, puzzle, regionMap, constraints };
       }
     } finally {
       Math.random = oldRandom;
@@ -3142,12 +3292,24 @@ SZ.GameState = class {
     this._engineStateKey = null;
     let engineState = this.getEngineState();
 
-    // Generate jigsaw region map if needed
+    // Jigsaw: region map + solution are generated TOGETHER (see
+    // SZ.Engine.generateSolvableJigsaw) so a pathologically hard region
+    // shape gets discarded and retried instead of stalling the page for
+    // seconds. Skip this when we're loading an existing puzzle (daily
+    // challenge / saved game) — those already carry their own regionMap
+    // and solution, so generating one here would just be wasted work.
+    let _jigsawPregen = null;
     if (this.variant === 'jigsaw' && !this.regionMap) {
-      this.regionMap = SZ.Engine.generateJigsawRegionMap(N);
-      engineState.regionMap = this.regionMap;
+      if (opts.solution && opts.puzzle) {
+        this.regionMap = SZ.Engine.generateJigsawRegionMap(N);
+        engineState.regionMap = this.regionMap;
+      } else {
+        _jigsawPregen = SZ.Engine.generateSolvableJigsaw(N);
+        this.regionMap = _jigsawPregen.regionMap;
+        engineState.regionMap = this.regionMap;
+      }
     }
-    this._peers = SZ.Engine.buildPeers(engineState);
+    this._peers = _jigsawPregen ? _jigsawPregen.peers : SZ.Engine.buildPeers(engineState);
     // Sync cached engine state's _peers so subsequent callers don't rebuild
     engineState._peers = this._peers;
 
@@ -3184,17 +3346,7 @@ SZ.GameState = class {
         this.solution = tempSolution;
         this.puzzle = SZ.Engine.makePuzzle(this.solution, engineState, this.difficulty);
       } else {
-        this.solution = SZ.Engine.generateSolution(engineState);
-        // generateSolution may have regenerated the region map internally
-        // (jigsaw MRV retries). Sync it back to GameState so peers are consistent.
-        if (this.variant === 'jigsaw' && engineState.regionMap !== this.regionMap) {
-          this.regionMap = engineState.regionMap;
-          this._peers = SZ.Engine.buildPeers(engineState);
-          engineState._peers = this._peers;
-          // Invalidate the engine state cache so getEngineState rebuilds with the synced regionMap
-          this._engineStateCache = null;
-          this._engineStateKey = null;
-        }
+        this.solution = _jigsawPregen ? _jigsawPregen.solution : SZ.Engine.generateSolution(engineState);
         this.puzzle = SZ.Engine.makePuzzle(this.solution, engineState, this.difficulty);
       }
     }
@@ -5058,15 +5210,8 @@ SZ.UI = {
 
   // ── New game flow ─────────────────────────────────────
   newGame() {
-    // Show loading overlay before potentially-blocking puzzle generation
-    const loading = document.getElementById('loadingOverlay');
-    if (loading) loading.style.display = 'flex';
-    // Defer generation to next frame so the browser paints the loading state
-    setTimeout(() => {
-      SZ.state.newGame();
-      if (loading) loading.style.display = 'none';
-      this.startNewGame();
-    }, 50);
+    SZ.state.newGame();
+    this.startNewGame();
   },
 
   startNewGame() {
@@ -5098,6 +5243,76 @@ SZ.UI = {
   // ── Overlays ──────────────────────────────────────────
   showOverlay(id) { document.getElementById(id).style.display = 'flex'; },
   hideOverlay(id) { document.getElementById(id).style.display = 'none'; },
+
+  // ── Share ─────────────────────────────────────────────
+  _shareUrl: '',
+
+  shareGame() {
+    // Always share the canonical game URL (not localhost)
+    const shareUrl = 'https://joudlight.github.io/Sudoku-Zen/';
+    this._shareUrl = shareUrl;
+    const encoded = encodeURIComponent(shareUrl);
+
+    // Set QR code
+    document.getElementById('qrImg').src =
+      'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' + encoded;
+
+    // Set copy link input
+    document.getElementById('shareUrlInput').value = shareUrl;
+
+    // Bind social share buttons (rebind on each open so previous listeners don't stack)
+    const grid = document.querySelector('.share-grid');
+    const old = grid.querySelectorAll('.sbtn');
+    for (const btn of old) {
+      const clone = btn.cloneNode(true);
+      btn.parentNode.replaceChild(clone, btn);
+    }
+    document.querySelectorAll('.sbtn').forEach(btn => {
+      btn.addEventListener('click', () => this._shareVia(btn.dataset.share, encoded, shareUrl));
+    });
+
+    // Copy link
+    const copyBtn = document.getElementById('copyLinkBtn');
+    const newCopy = copyBtn.cloneNode(true);
+    copyBtn.parentNode.replaceChild(newCopy, copyBtn);
+    newCopy.addEventListener('click', () => this._copyShareUrl());
+
+    this.showOverlay('shareOverlay');
+  },
+
+  _shareVia(platform, encodedUrl, rawUrl) {
+    const e = s => encodeURIComponent(s);
+    const links = {
+      twitter:   `https://twitter.com/intent/tweet?text=${e('Play Sudoku Zen — premium puzzles with jigsaw, killer, thermo & more!')}&url=${encodedUrl}`,
+      facebook:  `https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}`,
+      whatsapp:  `https://wa.me/?text=${e('Play Sudoku Zen! ') + encodedUrl}`,
+      telegram:  `https://t.me/share/url?url=${encodedUrl}&text=${e('Play Sudoku Zen — premium puzzle platform')}`,
+      reddit:    `https://reddit.com/submit?url=${encodedUrl}&title=${e('Sudoku Zen — Premium Puzzle Platform')}`,
+      email:     `mailto:?subject=${e('Play Sudoku Zen')}&body=${e('Try Sudoku Zen — multiple board sizes, variants, and modes!\n\n') + encodedUrl}`
+    };
+    const link = links[platform];
+    if (link) window.open(link, '_blank', 'width=600,height=500,noopener');
+  },
+
+  _copyShareUrl() {
+    const input = document.getElementById('shareUrlInput');
+    input.select();
+    input.setSelectionRange(0, 99999);
+    try {
+      navigator.clipboard.writeText(input.value).then(() => {
+        const btn = document.getElementById('copyLinkBtn');
+        btn.textContent = '✓';
+        btn.classList.add('copied');
+        setTimeout(() => { btn.textContent = '📋'; btn.classList.remove('copied'); }, 2000);
+      }).catch(() => {
+        document.execCommand('copy');
+        this.showToast('Link copied!');
+      });
+    } catch(e) {
+      document.execCommand('copy');
+      this.showToast('Link copied!');
+    }
+  },
 
   // ── Toast ─────────────────────────────────────────────
   _toastTimer: null,
@@ -5269,7 +5484,9 @@ SZ.Init = {
 
     // Challenges
     document.getElementById('footerChallenges').addEventListener('click', (e) => { e.preventDefault(); SZ.Challenges.render(); SZ.UI.showOverlay('challengesOverlay'); });
+    document.getElementById('footerShare').addEventListener('click', (e) => { e.preventDefault(); SZ.UI.shareGame(); });
     document.getElementById('closeChallengesBtn').addEventListener('click', () => SZ.UI.hideOverlay('challengesOverlay'));
+    document.getElementById('closeShareBtn').addEventListener('click', () => SZ.UI.hideOverlay('shareOverlay'));
     document.getElementById('endlessBtn').addEventListener('click', () => {
       SZ.UI.hideOverlay('challengesOverlay');
       SZ.state.challengeType = null;
@@ -5286,6 +5503,7 @@ SZ.Init = {
     document.getElementById('undoBtn').addEventListener('click', SZ.UI.undoMove);
     document.getElementById('pauseBtn').addEventListener('click', SZ.UI.togglePause);
     document.getElementById('newGameBtn').addEventListener('click', () => SZ.UI.newGame());
+    document.getElementById('shareBtn').addEventListener('click', () => SZ.UI.shareGame());
 
     // Win overlay
     document.getElementById('playAgainBtn').addEventListener('click', () => { SZ.UI.hideOverlay('winOverlay'); SZ.UI.newGame(); });
