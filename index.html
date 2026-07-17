@@ -902,6 +902,24 @@ footer a:hover { color: var(--accent); }
 .footer-links { display: flex; gap: 16px; }
 .footer-links a { font-size: 11px; letter-spacing: 0.5px; }
 
+/* ── Social: Leaderboard & Rating ── */
+.lb-tabs { display: flex; gap: 6px; margin: 12px 0; flex-wrap: wrap; }
+.lb-tab {
+  flex: 1; padding: 6px 10px; border-radius: var(--radius-sm); border: 1px solid var(--ink-faint);
+  background: var(--paper); color: var(--ink); cursor: pointer; font-size: 0.85rem;
+  transition: background 0.2s, color 0.2s;
+}
+.lb-tab.active { background: var(--accent); color: var(--paper); border-color: var(--accent); }
+.lb-row {
+  display: grid; grid-template-columns: 28px 1fr auto; gap: 8px; padding: 6px 4px;
+  border-bottom: 1px solid var(--ink-faint); align-items: center; font-size: 0.9rem; color: var(--ink);
+}
+.lb-row.me { background: var(--highlight); border-radius: var(--radius-sm); }
+.lb-empty { text-align: center; padding: 20px; color: var(--ink-light); }
+.star-picker { font-size: 2rem; text-align: center; cursor: pointer; letter-spacing: 4px; }
+.star-picker span { color: var(--ink-faint); transition: color 0.15s; }
+.star-picker span.filled { color: var(--accent); }
+
 /* Constraint SVG overlay — sits on top of the board */
 #constraintOverlay {
   pointer-events: none;
@@ -1350,6 +1368,7 @@ footer a:hover { color: var(--accent); }
       <a href="#" id="footerStats">Stats</a>
       <a href="#" id="footerAch">Awards</a>
       <a href="#" id="footerChallenges">Challenges</a>
+      <a href="#" id="footerLeaderboard">Leaderboard</a>
       <a href="#" id="footerShare">Share</a>
     </div>
   </footer>
@@ -1461,6 +1480,40 @@ footer a:hover { color: var(--accent); }
   </div>
 </div>
 
+<!-- ═══ LEADERBOARD OVERLAY ═══ -->
+<div class="overlay" id="leaderboardOverlay" style="display:none" role="dialog">
+  <div class="modal" style="max-width: 480px;">
+    <div class="modal-icon">🏆</div>
+    <h2>Leaderboard</h2>
+    <div class="lb-tabs" id="lbTabs">
+      <button class="lb-tab active" data-period="today">Today</button>
+      <button class="lb-tab" data-period="week">Week</button>
+      <button class="lb-tab" data-period="month">Month</button>
+      <button class="lb-tab" data-period="alltime">All Time</button>
+    </div>
+    <div id="leaderboardList"><div class="lb-empty">Loading…</div></div>
+    <div class="modal-btns" style="margin-top: 16px;">
+      <button class="mbtn mbtn-primary" id="closeLeaderboardBtn">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ RATE PUZZLE OVERLAY ═══ -->
+<div class="overlay" id="ratePuzzleOverlay" style="display:none" role="dialog">
+  <div class="modal" style="max-width: 380px;">
+    <div class="modal-icon">⭐</div>
+    <h2>How was that puzzle?</h2>
+    <div class="star-picker" id="starPicker">
+      <span data-star="1">☆</span><span data-star="2">☆</span><span data-star="3">☆</span>
+      <span data-star="4">☆</span><span data-star="5">☆</span>
+    </div>
+    <div class="modal-btns" style="margin-top: 16px;">
+      <button class="mbtn mbtn-secondary" id="skipRatingBtn">Skip</button>
+      <button class="mbtn mbtn-primary" id="submitRatingBtn" disabled>Submit</button>
+    </div>
+  </div>
+</div>
+
 <!-- ═══ SHARE OVERLAY ═══ -->
 <div class="overlay" id="shareOverlay" style="display:none" role="dialog">
   <div class="modal share-modal">
@@ -1487,6 +1540,13 @@ footer a:hover { color: var(--accent); }
     </div>
   </div>
 </div>
+
+<!-- ═══════════════════════════════════════════════════════
+   SOCIAL / LEADERBOARD (Supabase) — optional, fails soft offline
+   ═══════════════════════════════════════════════════════ -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="sudoku-social.js"></script>
+<script src="sudoku-social-ui.js"></script>
 
 <!-- ═══════════════════════════════════════════════════════
    JAVASCRIPT
@@ -4052,9 +4112,18 @@ SZ.Renderer = {
     // Disable hint/undo buttons if mode doesn't allow
     const hintBtn = document.getElementById('hintBtn');
     const logicBtn = document.getElementById('logicHintBtn');
+    const pencilBtn = document.getElementById('pencilBtn');
     const undoBtn = document.getElementById('undoBtn');
+    const isCompetitive = SZ.state.challengeType === 'daily' || SZ.state.challengeType === 'weekly';
     hintBtn.disabled = mode.hints === 0;
-    logicBtn.disabled = mode.hints === 0;
+    // Logic Hint and Magic Pencil are disabled during the Daily Challenge
+    // specifically — both are uncapped/untracked assist tools, so allowing
+    // them would make the leaderboard not reflect actual solving skill.
+    // They remain fully available in every other mode.
+    logicBtn.disabled = mode.hints === 0 || isCompetitive;
+    pencilBtn.disabled = isCompetitive;
+    pencilBtn.title = isCompetitive ? 'Disabled during Daily/Weekly Challenges to keep the leaderboard fair' : '';
+    logicBtn.title = isCompetitive ? 'Disabled during Daily/Weekly Challenges to keep the leaderboard fair' : '';
     undoBtn.disabled = !mode.undo;
     document.getElementById('hintCount').textContent = SZ.state.hintsLeft;
   },
@@ -4595,6 +4664,7 @@ SZ.Challenges = {
     const dateStr = this._todayStr();
     const diff = this._dailyDifficulty();
     const { solution, puzzle } = SZ.Engine.generateDailyPuzzle(dateStr, '9x9', 'classic', diff);
+    if (SZ.Social) SZ.Social.DailyAttempt.start(dateStr, diff, puzzle); // fire-and-forget, server timestamps the clock
     SZ.state.newGame({
       size: '9x9', variant: 'classic', mode: 'timed', difficulty: diff,
       challengeType: 'daily', challengeDate: dateStr, solution, puzzle
@@ -5031,6 +5101,10 @@ SZ.UI = {
   /** Magic Pencil — auto-fill candidates for all empty cells. */
   magicPencil() {
     if (SZ.state.gameOver || SZ.state.paused) return;
+    if (SZ.state.challengeType === 'daily' || SZ.state.challengeType === 'weekly') {
+      this.showToast('Magic Pencil is disabled during Daily/Weekly Challenges');
+      return;
+    }
     const changed = SZ.state.autoPencil('all');
     for (const idx of changed) SZ.Renderer.updateCell(idx);
     SZ.Audio.hint();
@@ -5041,6 +5115,10 @@ SZ.UI = {
   /** Logic Hint — find a Naked/Hidden Single and explain it. */
   logicHint() {
     if (SZ.state.gameOver || SZ.state.paused) return;
+    if (SZ.state.challengeType === 'daily' || SZ.state.challengeType === 'weekly') {
+      this.showToast('Logic Hint is disabled during Daily/Weekly Challenges');
+      return;
+    }
     const engineState = SZ.state.getEngineState();
     const board = SZ.state._flatBoard();
     const hints = SZ.Engine.findLogicHints(board, engineState);
@@ -5148,6 +5226,20 @@ SZ.UI = {
     SZ.Stats.recordWin(SZ.state, SZ.state.timerSec);
     if (SZ.state.challengeType && SZ.state.challengeDate) {
       SZ.Challenges.recordResult(SZ.state.challengeType, SZ.state.challengeDate, SZ.state.timerSec, SZ.state.mistakes);
+    }
+
+    // Social: submit the daily score (server verifies + times it) and
+    // queue the post-win rating prompt. Both no-op safely if offline.
+    if (SZ.Social && SZ.state.challengeType === 'daily') {
+      const hintsUsedForSocial = SZ.Modes[SZ.state.mode].hints - SZ.state.hintsLeft;
+      SZ.Social.DailyAttempt.complete(SZ.state.userGrid, SZ.state.mistakes, hintsUsedForSocial)
+        .then(result => { if (result) SZ.SocialUI.showRankToast(result.rank_today, result.time_seconds); });
+    }
+    if (SZ.SocialUI) {
+      const puzzleId = SZ.state.challengeType === 'daily'
+        ? `daily_${SZ.state.challengeDate}_${SZ.state.difficulty}`
+        : `gen_${SZ.state.difficulty}_${SZ.state.size}_${SZ.state.variant}`;
+      SZ.SocialUI.queuePendingRating(puzzleId, SZ.state.difficulty);
     }
 
     // XP
@@ -5456,6 +5548,11 @@ SZ.Init = {
     // Settings
     SZ.Settings.apply();
 
+    // Social: first-launch nickname prompt (no-op if SZ.Social failed to load)
+    if (SZ.Social && !SZ.Social.Player.hasNickname()) {
+      setTimeout(() => SZ.SocialUI && SZ.SocialUI.promptNickname(), 600);
+    }
+
     // Build config bar
     SZ.UI.buildConfigBar();
 
@@ -5501,6 +5598,13 @@ SZ.Init = {
 
     // Challenges
     document.getElementById('footerChallenges').addEventListener('click', (e) => { e.preventDefault(); SZ.Challenges.render(); SZ.UI.showOverlay('challengesOverlay'); });
+    if (SZ.SocialUI) {
+      document.getElementById('footerLeaderboard').addEventListener('click', (e) => {
+        e.preventDefault();
+        SZ.SocialUI.renderLeaderboard();
+        SZ.UI.showOverlay('leaderboardOverlay');
+      });
+    }
     document.getElementById('footerShare').addEventListener('click', (e) => { e.preventDefault(); SZ.UI.shareGame(); });
     document.getElementById('closeChallengesBtn').addEventListener('click', () => SZ.UI.hideOverlay('challengesOverlay'));
     document.getElementById('closeShareBtn').addEventListener('click', () => SZ.UI.hideOverlay('shareOverlay'));
