@@ -837,6 +837,8 @@ header {
 .action-btn.note-active { background: var(--ink); border-color: var(--ink); color: var(--paper); }
 .action-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .action-btn:disabled:hover { transform: none; border-color: var(--cell-border); }
+.action-btn.assist-locked { border-style: dashed; opacity: 0.75; }
+.action-btn.assist-locked::after { content: '🔒'; font-size: 9px; margin-left: 3px; }
 .badge {
   margin-left: auto; font-size: 9px; background: var(--bg);
   padding: 2px 7px; border-radius: var(--radius-full);
@@ -935,6 +937,11 @@ footer a:hover { color: var(--accent); }
   dominant-baseline: hanging;
 }
 #board[data-size="16"] #constraintOverlay text { font-size: 7px; }
+/* Cage group fade transition — solved cages gracefully disappear */
+.cage-group { transition: opacity 0.25s ease-out; }
+.cage-group.solved { opacity: 0; pointer-events: none; }
+.cage-label-halo { paint-order: stroke fill; }
+
 
 /* ═══════════════════════════════════════════════════════
    OVERLAYS / MODALS
@@ -948,6 +955,10 @@ footer a:hover { color: var(--accent); }
   overflow-y: auto;
 }
 @keyframes fadeIn { from { opacity:0 } to { opacity:1 } }
+@keyframes fadeOut { from { opacity:1 } to { opacity:0 } }
+.overlay.closing { animation: fadeOut 0.18s ease forwards; }
+.overlay.closing .modal { animation: slideDown 0.2s cubic-bezier(0.4, 0, 1, 1) forwards; }
+@keyframes slideDown { from { transform: translateY(0); opacity: 1; } to { transform: translateY(16px); opacity: 0; } }
 .modal {
   background: var(--paper); border-radius: 20px;
   padding: 36px 40px; text-align: center;
@@ -1352,6 +1363,7 @@ footer a:hover { color: var(--accent); }
         <button class="action-btn" id="noteBtn"><span class="icon">✏️</span><span>Notes</span><span class="badge" id="noteLabel">OFF</span></button>
         <button class="action-btn" id="pencilBtn"><span class="icon">🪄</span><span>Magic Pencil</span></button>
         <button class="action-btn" id="undoBtn"><span class="icon">↩️</span><span>Undo</span></button>
+        <button class="action-btn" id="redoBtn"><span class="icon">↪️</span><span>Redo</span></button>
         <button class="action-btn" id="eraseBtn"><span class="icon">⌫</span><span>Erase</span></button>
         <button class="action-btn" id="hintBtn"><span class="icon">💡</span><span>Hint</span><span class="badge" id="hintCount">3</span></button>
         <button class="action-btn" id="logicHintBtn"><span class="icon">🧠</span><span>Logic Hint</span></button>
@@ -1392,10 +1404,29 @@ footer a:hover { color: var(--accent); }
       <div class="stat"><span class="modal-stat-val" id="winMistakes">—</span><span class="modal-stat-lbl">Mistakes</span></div>
       <div class="stat"><span class="modal-stat-val" id="winScore">—</span><span class="modal-stat-lbl">Score</span></div>
       <div class="stat"><span class="modal-stat-val" id="winXP">—</span><span class="modal-stat-lbl">XP Earned</span></div>
+      <div class="stat"><span class="modal-stat-val" id="winHints">—</span><span class="modal-stat-lbl">Hints Used</span></div>
+      <div class="stat"><span class="modal-stat-val" id="winPencil">—</span><span class="modal-stat-lbl">Magic Pencil</span></div>
+      <div class="stat"><span class="modal-stat-val" id="winLogicHints">—</span><span class="modal-stat-lbl">Logic Hints</span></div>
     </div>
     <div class="modal-btns">
       <button class="mbtn mbtn-primary" id="playAgainBtn">Play Again</button>
       <button class="mbtn mbtn-secondary" id="reviewBtn">Review</button>
+    </div>
+    <div class="modal-btns" style="margin-top: 8px;">
+      <button class="mbtn mbtn-secondary" id="shareResultBtn" style="width: 100%;">📤 Share Result &amp; Challenge a Friend</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ ASSIST UNLOCK CONFIRM ═══ -->
+<div class="overlay" id="assistConfirmOverlay" style="display:none" role="dialog" aria-modal="true">
+  <div class="modal" style="max-width: 380px;">
+    <div class="modal-icon">🔒</div>
+    <h2 id="assistConfirmTitle">Enable assist tools?</h2>
+    <p id="assistConfirmMessage">This mode disables Logic Hint and Magic Pencil by default.</p>
+    <div class="modal-btns">
+      <button class="mbtn mbtn-secondary" id="assistCancelBtn">Cancel</button>
+      <button class="mbtn mbtn-primary" id="assistConfirmBtn">Enable</button>
     </div>
   </div>
 </div>
@@ -1414,6 +1445,7 @@ footer a:hover { color: var(--accent); }
       <span class="help-key">H</span><span class="help-desc">Use hint</span>
       <span class="help-key">L</span><span class="help-desc">Logic hint</span>
       <span class="help-key">Z</span><span class="help-desc">Undo move</span>
+      <span class="help-key">Y</span><span class="help-desc">Redo move</span>
       <span class="help-key">P</span><span class="help-desc">Pause / Resume</span>
       <span class="help-key">⇅⇠⇢</span><span class="help-desc">Arrow keys / WASD</span>
       <span class="help-key">?</span><span class="help-desc">Show this help</span>
@@ -1709,90 +1741,645 @@ SZ.VariantEngine = {
     return this._getJigsawInternalPath(regionMap, N, cw, ch);
   },
 
-  /** Render Killer cage borders and sum labels as SVG. */
+  /** Render Killer cage borders and sum labels as SVG.
+   *  Uses boundary tracing to draw each cage as a single continuous
+   *  outline with inset, rounded corners, and subtle dashed styling.
+   *  Solved cages fade out via CSS transition on the <g> group opacity.
+   *  Cage perimeter paths are cached for performance. */
   renderKillerSVG(svg, cages, N, cw, ch, cssVar) {
-    const cellToCage = new Array(N * N).fill(-1);
-    const cageColor = [];
-    cages.forEach((c, ci) => {
-      c.cells.forEach(idx => cellToCage[idx] = ci);
-      cageColor[ci] = SZ.Constraints.getCageColor(ci);
-    });
-    cages.forEach((c, ci) => {
-      const first = Math.min(...c.cells);
-      const r = Math.floor(first / N), col = first % N;
-      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-      label.setAttribute('x', col * cw + 3);
-      label.setAttribute('y', r * ch + 11);
-      label.setAttribute('font-size', Math.max(8, cw * 0.18));
-      label.setAttribute('font-weight', '700');
-      label.setAttribute('fill', cageColor[ci]);
-      label.setAttribute('font-family', 'DM Sans, sans-serif');
-      label.setAttribute('pointer-events', 'none');
-      label.textContent = c.sum;
-      svg.appendChild(label);
-    });
-    for (let r = 0; r < N; r++) {
-      for (let c = 0; c < N; c++) {
-        const idx = r * N + c, ci = cellToCage[idx];
-        if (ci < 0) continue;
-        if (c < N - 1 && cellToCage[idx + 1] !== ci) {
-          const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-          line.setAttribute('x1', (c+1)*cw); line.setAttribute('y1', r*ch);
-          line.setAttribute('x2', (c+1)*cw); line.setAttribute('y2', (r+1)*ch);
-          line.setAttribute('stroke', cageColor[ci] || cssVar('--box-border'));
-          line.setAttribute('stroke-width', '2.5');
-          svg.appendChild(line);
-        }
-        if (r < N - 1 && cellToCage[idx + N] !== ci) {
-          const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-          line.setAttribute('x1', c*cw); line.setAttribute('y1', (r+1)*ch);
-          line.setAttribute('x2', (c+1)*cw); line.setAttribute('y2', (r+1)*ch);
-          line.setAttribute('stroke', cageColor[ci] || cssVar('--box-border'));
-          line.setAttribute('stroke-width', '2.5');
-          svg.appendChild(line);
+    const INSET = 2;
+    const CORNER_RADIUS = 3;
+    const cageColor = SZ.Constraints.getCageColorMap(cages, N);
+    const cageSolved = cages.map(c =>
+      c.cells.every(idx => SZ.state.userGrid[idx] === SZ.state.solution[idx])
+    );
+
+    // Cache perimeters (grid-coordinate topology never changes during gameplay)
+    const cageSig = cages.map(c => c.cells.join(',')).join('|');
+    if (!this._cagePerimCache || this._cagePerimCache.N !== N ||
+        this._cagePerimCache.sig !== cageSig) {
+      this._cagePerimCache = {
+        N,
+        sig: cageSig,
+        perimeters: cages.map(c => this._traceCagePerimeter(c.cells, N))
+      };
+    }
+
+    cages.forEach((cage, ci) => {
+      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      g.setAttribute('class', 'cage-group' + (cageSolved[ci] ? ' solved' : ''));
+      g.setAttribute('data-cage-idx', String(ci));
+
+      // Cage border path
+      const perimeter = this._cagePerimCache.perimeters[ci];
+      if (perimeter && perimeter.length >= 3) {
+        const simplified = this._simplifyPerimeter(perimeter);
+        const pathData = this._perimeterToSVGPath(simplified, cw, ch, INSET, CORNER_RADIUS);
+        if (pathData) {
+          const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+          path.setAttribute('d', pathData);
+          path.setAttribute('fill', 'none');
+          path.setAttribute('stroke', cageColor[ci]);
+          path.setAttribute('stroke-width', '1.5');
+          path.setAttribute('stroke-dasharray', '4,4');
+          path.setAttribute('stroke-linecap', 'round');
+          path.setAttribute('stroke-linejoin', 'round');
+          path.setAttribute('opacity', '0.78');
+          g.appendChild(path);
         }
       }
-    }
+
+      // Sum label (always present in DOM; hidden via group opacity when solved)
+      const first = Math.min(...cage.cells);
+      const lr = Math.floor(first / N), lc = first % N;
+      const isSingle = cage.cells.length === 1;
+      const fontSize = isSingle ? Math.max(6, cw * 0.13) : Math.max(8, cw * 0.18);
+      const pad = isSingle ? 2 : 4;
+      const lx = lc * cw + pad + INSET;
+      const ly = lr * ch + pad + INSET * 0.5;
+
+      // White halo for readability (drawn first, underneath)
+      const halo = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      halo.setAttribute('x', lx);
+      halo.setAttribute('y', ly);
+      halo.setAttribute('font-size', fontSize);
+      halo.setAttribute('font-weight', '700');
+      halo.setAttribute('font-family', 'DM Sans, sans-serif');
+      halo.setAttribute('fill', 'white');
+      halo.setAttribute('stroke', 'white');
+      halo.setAttribute('stroke-width', isSingle ? '2' : '3');
+      halo.setAttribute('class', 'cage-label-halo');
+      halo.setAttribute('pointer-events', 'none');
+      halo.textContent = cage.sum;
+      g.appendChild(halo);
+
+      // Colored label on top
+      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      label.setAttribute('x', lx);
+      label.setAttribute('y', ly);
+      label.setAttribute('font-size', fontSize);
+      label.setAttribute('font-weight', '700');
+      label.setAttribute('font-family', 'DM Sans, sans-serif');
+      label.setAttribute('fill', cageColor[ci]);
+      label.setAttribute('pointer-events', 'none');
+      label.textContent = cage.sum;
+      g.appendChild(label);
+
+      svg.appendChild(g);
+    });
+
+    // Outer board frame (drawn last so it's on top)
     const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
     rect.setAttribute('x', '0'); rect.setAttribute('y', '0');
-    rect.setAttribute('width', N*cw); rect.setAttribute('height', N*ch);
+    rect.setAttribute('width', N * cw); rect.setAttribute('height', N * ch);
     rect.setAttribute('fill', 'none');
     rect.setAttribute('stroke', cssVar('--box-border') || '#555');
     rect.setAttribute('stroke-width', '3');
     svg.appendChild(rect);
   },
 
-  /** Render Thermo bulbs and tubes as SVG. */
+  /** Trace the outer perimeter of a cage as a closed polygon.
+   *  Returns array of [gc, gr] grid-coordinate vertices in order,
+   *  or null if the cage is empty / degenerate.
+   *  Algorithm: collect all directed boundary edges (with cage interior
+   *  on the right in screen coords), then chain them into a closed loop. */
+  _traceCagePerimeter(cageCells, N) {
+    if (!cageCells || cageCells.length === 0) return null;
+    const cellSet = new Set(cageCells);
+
+    // Collect directed boundary edges — interior is always on the RIGHT
+    // of the walking direction (screen coords where y increases downward).
+    // Right perpendicular of direction (dx,dy) is (-dy,dx).
+    // Edge map: "gc,gr" → [[to_gc, to_gr], ...]
+    const edgeMap = Object.create(null);
+
+    const addEdge = (fromGC, fromGR, toGC, toGR) => {
+      const key = fromGC + ',' + fromGR;
+      if (!edgeMap[key]) edgeMap[key] = [];
+      edgeMap[key].push([toGC, toGR]);
+    };
+
+    for (const idx of cageCells) {
+      const r = Math.floor(idx / N), c = idx % N;
+      const above = r > 0 ? (r - 1) * N + c : -1;
+      const below = r < N - 1 ? (r + 1) * N + c : -1;
+      const left  = c > 0 ? r * N + (c - 1) : -1;
+      const right = c < N - 1 ? r * N + (c + 1) : -1;
+
+      // Top edge: walk right (→), interior below → boundary if cell above not in cage
+      if (!cellSet.has(above)) addEdge(c, r, c + 1, r);
+      // Right edge: walk down (↓), interior left → boundary if cell right not in cage
+      if (!cellSet.has(right)) addEdge(c + 1, r, c + 1, r + 1);
+      // Bottom edge: walk left (←), interior above → boundary if cell below not in cage
+      if (!cellSet.has(below)) addEdge(c + 1, r + 1, c, r + 1);
+      // Left edge: walk up (↑), interior right → boundary if cell left not in cage
+      if (!cellSet.has(left))  addEdge(c, r + 1, c, r);
+    }
+
+    // Find a starting vertex (lexicographically smallest = topmost-leftmost)
+    const keys = Object.keys(edgeMap);
+    if (keys.length === 0) return null;
+    let startKey = keys[0];
+    for (const k of keys) {
+      if (k < startKey) startKey = k;
+    }
+
+    // Chain edges into a closed perimeter
+    const perimeter = [];
+    let curKey = startKey;
+    const maxSteps = cageCells.length * 4 + 4; // safety bound
+    let steps = 0;
+    do {
+      const parts = curKey.split(',');
+      perimeter.push([parseInt(parts[0], 10), parseInt(parts[1], 10)]);
+      const targets = edgeMap[curKey];
+      if (!targets || targets.length === 0) return null; // broken chain
+      const next = targets.shift();               // take one outgoing edge
+      curKey = next[0] + ',' + next[1];
+      if (++steps > maxSteps) return null;         // safety: infinite loop
+    } while (curKey !== startKey);
+
+    return perimeter.length >= 4 ? perimeter : null;
+  },
+
+  /** Remove collinear vertices from a perimeter (keep only actual corners
+   *  where the direction changes). This simplifies the SVG path and avoids
+   *  degenerate corners on straight edges. */
+  _simplifyPerimeter(perimeter) {
+    if (!perimeter || perimeter.length < 4) return perimeter;
+    const result = [];
+    const n = perimeter.length;
+    for (let i = 0; i < n; i++) {
+      const prev = perimeter[(i - 1 + n) % n];
+      const curr = perimeter[i];
+      const next = perimeter[(i + 1) % n];
+      // Cross product of (curr-prev) × (next-curr) — zero means collinear
+      const dx1 = curr[0] - prev[0], dy1 = curr[1] - prev[1];
+      const dx2 = next[0] - curr[0], dy2 = next[1] - curr[1];
+      const cross = dx1 * dy2 - dy1 * dx2;
+      if (cross !== 0) result.push(curr);
+    }
+    return result.length >= 3 ? result : perimeter; // fallback if over-simplified
+  },
+
+  /** Convert a simplified perimeter (grid coords, corners only) to an SVG
+   *  path string with inset offset and quadratic-bezier rounded corners.
+   *
+   *  Inset calculation for axis-aligned edges:
+   *    The inward normal (right perpendicular in screen coords) of direction
+   *    (dx, dy) is (-dy, dx). The offset pushes each edge inward by `inset`.
+   *    At each corner, the inset vertex is the intersection of the two
+   *    offset lines from the incoming and outgoing edges.
+   *
+   *  Corner rounding:
+   *    At each inset corner, a quadratic bezier (Q) is drawn instead of a
+   *    sharp angle, with the original inset vertex as the control point and
+   *    endpoints `cornerRadius` pixels back along each edge. */
+  _perimeterToSVGPath(perimeter, cw, ch, inset, cornerRadius) {
+    if (!perimeter || perimeter.length < 3) return '';
+    const n = perimeter.length;
+
+    // 1. Convert grid coords to pixel coords
+    const px = perimeter.map(([gc, gr]) => [gc * cw, gr * ch]);
+
+    // 2. Compute inset vertices
+    const iv = [];
+    for (let i = 0; i < n; i++) {
+      const prev = px[(i - 1 + n) % n];
+      const curr = px[i];
+      const next = px[(i + 1) % n];
+
+      // Incoming and outgoing direction vectors (normalized for consistent inset)
+      const rdxIn = curr[0] - prev[0], rdyIn = curr[1] - prev[1];
+      const rdxOut = next[0] - curr[0], rdyOut = next[1] - curr[1];
+      const lenIn = Math.max(Math.sqrt(rdxIn * rdxIn + rdyIn * rdyIn), 0.01);
+      const lenOut = Math.max(Math.sqrt(rdxOut * rdxOut + rdyOut * rdyOut), 0.01);
+      const dxIn = rdxIn / lenIn, dyIn = rdyIn / lenIn;
+      const dxOut = rdxOut / lenOut, dyOut = rdyOut / lenOut;
+
+      // Inward offsets (right perpendicular of unit direction: -dy, dx) * inset
+      const inOffX  = -dyIn  * inset, inOffY  = dxIn  * inset;
+      const outOffX = -dyOut * inset, outOffY = dxOut * inset;
+
+      // Intersection of the two offset lines gives the inset vertex.
+      // For axis-aligned edges, one line constrains x, the other y.
+      // Use epsilon comparison since normalized values may not be exactly 0 or 1.
+      const eps = 0.001;
+      const inHoriz  = Math.abs(dyIn)  < eps;   // incoming edge is horizontal
+      const inVert   = Math.abs(dxIn)  < eps;   // incoming edge is vertical
+      const outHoriz = Math.abs(dyOut) < eps;
+      const outVert  = Math.abs(dxOut) < eps;
+      let ix, iy;
+      if (inHoriz && outHoriz) {
+        // Both horizontal (shouldn't happen after simplification)
+        ix = curr[0]; iy = curr[1] + inOffY;
+      } else if (inVert && outVert) {
+        // Both vertical
+        ix = curr[0] + inOffX; iy = curr[1];
+      } else if (inHoriz) {
+        // Incoming horizontal → gives y; outgoing vertical → gives x
+        ix = curr[0] + outOffX;
+        iy = curr[1] + inOffY;
+      } else {
+        // Incoming vertical → gives x; outgoing horizontal → gives y
+        ix = curr[0] + inOffX;
+        iy = curr[1] + outOffY;
+      }
+      iv.push([ix, iy]);
+    }
+
+    // 3. Build SVG path with rounded corners (quadratic bezier)
+    const cr = Math.min(cornerRadius, inset);
+    let d = '';
+
+    for (let i = 0; i < n; i++) {
+      const curr = iv[i];
+      const next = iv[(i + 1) % n];
+      const prev = iv[(i - 1 + n) % n];
+
+      const dx1 = curr[0] - prev[0], dy1 = curr[1] - prev[1];
+      const len1 = Math.max(Math.sqrt(dx1 * dx1 + dy1 * dy1), 0.01);
+      const dx2 = next[0] - curr[0], dy2 = next[1] - curr[1];
+      const len2 = Math.max(Math.sqrt(dx2 * dx2 + dy2 * dy2), 0.01);
+
+      // Cross product detects direction change (corner vs straight)
+      const cross = dx1 * dy2 - dy1 * dx2;
+      const isCorner = Math.abs(cross) > 0.01;
+      const canRound = isCorner && len1 > cr && len2 > cr;
+
+      if (i === 0) {
+        if (canRound) {
+          // Start just before the first corner (on the incoming edge)
+          const sx = curr[0] - (dx1 / len1) * cr;
+          const sy = curr[1] - (dy1 / len1) * cr;
+          d += 'M ' + sx.toFixed(2) + ' ' + sy.toFixed(2) + ' ';
+          // Quadratic bezier around the first corner
+          const ax = curr[0] + (dx2 / len2) * cr;
+          const ay = curr[1] + (dy2 / len2) * cr;
+          d += 'Q ' + curr[0].toFixed(2) + ' ' + curr[1].toFixed(2) + ' '
+             + ax.toFixed(2) + ' ' + ay.toFixed(2) + ' ';
+        } else {
+          d += 'M ' + curr[0].toFixed(2) + ' ' + curr[1].toFixed(2) + ' ';
+        }
+      } else if (canRound) {
+        // Line to just before corner, then quadratic bezier around it
+        const bx = curr[0] - (dx1 / len1) * cr;
+        const by = curr[1] - (dy1 / len1) * cr;
+        const ax = curr[0] + (dx2 / len2) * cr;
+        const ay = curr[1] + (dy2 / len2) * cr;
+        d += 'L ' + bx.toFixed(2) + ' ' + by.toFixed(2) + ' ';
+        d += 'Q ' + curr[0].toFixed(2) + ' ' + curr[1].toFixed(2) + ' '
+           + ax.toFixed(2) + ' ' + ay.toFixed(2) + ' ';
+      } else {
+        d += 'L ' + curr[0].toFixed(2) + ' ' + curr[1].toFixed(2) + ' ';
+      }
+    }
+
+    d += 'Z';
+    return d;
+  },
+
+  
+
+  /** Render Thermo bulbs and tubes as SVG.
+   *
+   *  Minimal, clean design — one bulb per thermo, one consistent-width
+   *  tube per thermo, fully transparent so the grid + numbers stay
+   *  readable. Designed to fix the duplicate-bulb issue (where the bulb
+   *  visually appeared at both ends of the path) and the over-rendered
+   *  bulb that previously stacked halo + body + rim + specular +
+   *  reflection (5 concentric circles that compounded into a "double
+   *  bulb" look).
+   *
+   *  Design rules:
+   *   • ONE bulb per thermo, drawn exactly once, at pts[0] (the
+   *     lowest-value cell — the actual thermo start). Never at the tip.
+   *   • Tube = a single SVG <path> with round joins + round caps so the
+   *     line is smooth and continuous through every turn. Round caps do
+   *     add a small disc at the tip, but at low stroke-width + low
+   *     opacity it reads as a path end, not a bulb.
+   *   • Consistent stroke-width along the entire tube (no taper).
+   *   • Both bulb and tube use modest opacity so underlying numbers
+   *     remain clearly readable.
+   *   • No filters, no gradients, no specular highlights, no tick marks
+   *     — minimal by design. */
   renderThermoSVG(svg, thermos, N, cw, ch, cssVar) {
-    const accent = cssVar('--accent');
-    thermos.forEach(thermo => {
+    const NS = 'http://www.w3.org/2000/svg';
+
+    // ── Theme-aware outline colour ─────────────────────────────────────
+    //  Spec: "subtle 1px white/dark outline (matching theme) around each
+    //  thermo stroke". Computed from --paper luminance so it auto-flips
+    //  with every theme in SZ.Themes.list.
+    const paper = cssVar('--paper') || '#ffffff';
+    const outlineColor = this._thermoOutlineFor(paper);
+
+    // Clean up any previously-defined thermo defs / hover styles.
+    let defs = svg.querySelector('defs');
+    if (defs) defs.querySelectorAll('[id^="thermo-"]').forEach(el => el.remove());
+    svg.querySelectorAll('style[data-thermo-hover]').forEach(el => el.remove());
+
+    // ── Geometry (REDUCED opacity & thickness for readability) ─────────
+    //  • Tube stroke-width: 0.14 * cellSize (was min(cellSize*0.6, cellSize-4))
+    //    → thin enough that cell values AND pencil marks stay clearly
+    //      readable through the tube.
+    //  • Bulb radius: 0.20 * cellSize (was 0.40)
+    //    → small enough that the digit in the bulb cell stays visible.
+    //  • Tube opacity: 0.20 (was 0.32) — clearly transparent.
+    //  • Bulb opacity: 0.22 (was 0.30) — clearly transparent.
+    //  • Outline opacity: 0.55 (was 0.85) — subtle, not heavy.
+    const cellSize = Math.min(cw, ch);
+    const strokeWidth = Math.max(3, cellSize * 0.14);
+    const bulbR       = Math.max(5, cellSize * 0.20);
+
+    // Perpendicular gap between parallel tubes (when thermos share cells).
+    // Sized to keep BULBS visibly separated, since bulbR > strokeWidth/2:
+    //   - 2 thermos: offset = ±parallelGap/2, bulb edges separated by
+    //     (parallelGap - 2*bulbR) which is > 0 by construction.
+    //   - The same gap also keeps tubes visibly separated (since tube
+    //     width << bulb diameter, the tube gap is parallelGap - strokeWidth,
+    //     comfortably positive).
+    const parallelGap = Math.max(bulbR * 2.2, strokeWidth * 1.8, 6);
+
+    // ── Per-thermo hue rotation (6 pastels, cycled) ───────────────────
+    //  Distinct hues make each path identifiable at a glance even when
+    //  two thermos sit one cell apart or share cells.
+    const palette = [
+      '#ef4444', // red
+      '#f59e0b', // amber
+      '#10b981', // emerald
+      '#3b82f6', // blue
+      '#8b5cf6', // violet
+      '#ec4899'  // pink
+    ];
+    const colorFor = (i) => palette[i % palette.length];
+
+    // ── Hover-dim CSS ──────────────────────────────────────────────────
+    //  On hover of any thermo group, dim ALL OTHER thermo groups to 30%
+    //  opacity. Implemented via CSS :has() (modern browsers) with a JS
+    //  fallback (.thermo-hovered / .thermo-has-hover classes) for older
+    //  browsers.
+    const hoverStyle = document.createElementNS(NS, 'style');
+    hoverStyle.setAttribute('data-thermo-hover', 'true');
+    let hoverCSS = '';
+    for (let i = 0; i < thermos.length; i++) {
+      hoverCSS +=
+        `#constraintOverlay:has(.thermo-grp-${i}:hover) .thermo-grp:not(.thermo-grp-${i}){opacity:.30;transition:opacity 140ms ease;}\n` +
+        `#constraintOverlay .thermo-grp-${i}:hover{cursor:pointer;}\n`;
+    }
+    hoverCSS +=
+      `#constraintOverlay.thermo-has-hover .thermo-grp:not(.thermo-hovered){opacity:.30;transition:opacity 140ms ease;}\n` +
+      `#constraintOverlay .thermo-grp{transition:opacity 140ms ease;}\n`;
+    hoverStyle.textContent = hoverCSS;
+    svg.appendChild(hoverStyle);
+
+    // ── Perpendicular offsets for thermos that share cells ────────────
+    //  When two (or more) thermos pass through the same cell — bulb,
+    //  middle, or tip — their tubes would visually overlap, looking
+    //  like a single stem. To prevent this, we shift each thermo's
+    //  ENTIRE path (tube AND bulb) perpendicular to its initial
+    //  direction so tubes sit side-by-side and bulbs sit side-by-side.
+    //
+    //  The offset is applied to ALL path points INCLUDING the bulb
+    //  cell, so the bulb moves WITH its tube — they stay connected,
+    //  and two thermos sharing a bulb cell render as TWO bulbs side
+    //  by side (never merging into one).
+    //
+    //  Thermos heading in DIFFERENT initial directions diverge
+    //  naturally from their bulbs, so they don't need an offset
+    //  (sub-grouping by initial direction below handles this).
+    //
+    //  Group thermos transitively: any two thermos sharing any cell
+    //  end up in the same group. Within each group, sub-group by
+    //  initial direction; only same-direction thermos need
+    //  perpendicular separation (others diverge naturally).
+    const thermoParent = thermos.map((_, i) => i);
+    const thermoFind = (x) => {
+      while (thermoParent[x] !== x) {
+        thermoParent[x] = thermoParent[thermoParent[x]];
+        x = thermoParent[x];
+      }
+      return x;
+    };
+    const thermoUnion = (a, b) => { thermoParent[thermoFind(a)] = thermoFind(b); };
+
+    // For each cell, list thermos that pass through it.
+    const cellThermos = new Map();
+    thermos.forEach((thermo, idx) => {
+      if (thermo.cells.length < 2) return;
+      thermo.cells.forEach(cell => {
+        if (!cellThermos.has(cell)) cellThermos.set(cell, []);
+        cellThermos.get(cell).push(idx);
+      });
+    });
+    // Union thermos that share ANY cell.
+    cellThermos.forEach(indices => {
+      for (let i = 1; i < indices.length; i++) thermoUnion(indices[0], indices[i]);
+    });
+
+    // Group thermo indices by their union-find root.
+    const thermoGroups = new Map();
+    thermos.forEach((_, idx) => {
+      const root = thermoFind(idx);
+      if (!thermoGroups.has(root)) thermoGroups.set(root, []);
+      thermoGroups.get(root).push(idx);
+    });
+
+    const thermoOffsets = thermos.map(() => null);
+    thermoGroups.forEach(indices => {
+      if (indices.length <= 1) return; // single thermo — no overlap risk
+
+      // Sub-group by INITIAL direction. Only thermos heading the same
+      // way from the bulb need perpendicular separation; thermos going
+      // different directions diverge on their own.
+      const byDir = new Map();
+      indices.forEach(thermoIdx => {
+        const cs = thermos[thermoIdx].cells;
+        const r0 = Math.floor(cs[0] / N), c0 = cs[0] % N;
+        const r1 = Math.floor(cs[1] / N), c1 = cs[1] % N;
+        const dx = c1 - c0, dy = r1 - r0;
+        const len = Math.hypot(dx, dy) || 1;
+        const key = `${Math.round(dx / len * 1000)}_${Math.round(dy / len * 1000)}`;
+        if (!byDir.has(key)) byDir.set(key, []);
+        byDir.get(key).push(thermoIdx);
+      });
+
+      byDir.forEach(groupIndices => {
+        if (groupIndices.length <= 1) return;
+        // Perpendicular to the (shared) initial direction, rotated 90° CCW.
+        const cs = thermos[groupIndices[0]].cells;
+        const r0 = Math.floor(cs[0] / N), c0 = cs[0] % N;
+        const r1 = Math.floor(cs[1] / N), c1 = cs[1] % N;
+        const dx = c1 - c0, dy = r1 - r0;
+        const len = Math.hypot(dx, dy) || 1;
+        const px = -dy / len, py = dx / len;
+
+        // Spread thermos symmetrically around the original bulb center.
+        // Spacing = parallelGap guarantees a visible gap between
+        // adjacent bulbs (and a wider gap between adjacent tubes,
+        // since tubes are thinner than bulbs).
+        const n = groupIndices.length;
+        groupIndices.forEach((thermoIdx, i) => {
+          const amount = (i - (n - 1) / 2) * parallelGap;
+          thermoOffsets[thermoIdx] = { x: px * amount, y: py * amount };
+        });
+      });
+    });
+
+    // ── Per-thermo drawing ────────────────────────────────────────────
+    thermos.forEach((thermo, thermoIdx) => {
       const cells = thermo.cells;
       if (cells.length < 2) return;
+
+      const color = colorFor(thermoIdx);
+
+      // Group: holds tube + bulb + outline, gets the per-thermo class
+      // for hover dimming.
+      const g = document.createElementNS(NS, 'g');
+      g.setAttribute('class', `thermo-grp thermo-grp-${thermoIdx}`);
+      g.setAttribute('data-thermo-idx', String(thermoIdx));
+
+      // Cell-center points for the tube path. Apply perpendicular
+      // offset to ALL points (including the bulb cell) so the entire
+      // thermo shifts sideways — tube and bulb stay connected, two
+      // thermos sharing a cell render as parallel paths side by side.
       const pts = cells.map(idx => {
         const r = Math.floor(idx / N), c = idx % N;
         return { x: c*cw+cw/2, y: r*ch+ch/2 };
       });
-      for (let i = 0; i < pts.length-1; i++) {
-        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        line.setAttribute('x1', pts[i].x); line.setAttribute('y1', pts[i].y);
-        line.setAttribute('x2', pts[i+1].x); line.setAttribute('y2', pts[i+1].y);
-        line.setAttribute('stroke', accent); line.setAttribute('stroke-width', '3');
-        line.setAttribute('stroke-linecap', 'round'); line.setAttribute('opacity', '0.45');
-        svg.appendChild(line);
+      const offset = thermoOffsets[thermoIdx];
+      if (offset) {
+        for (let i = 0; i < pts.length; i++) {
+          pts[i].x += offset.x;
+          pts[i].y += offset.y;
+        }
       }
-      const bulb = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-      bulb.setAttribute('cx', pts[0].x); bulb.setAttribute('cy', pts[0].y);
-      bulb.setAttribute('r', cw*0.35); bulb.setAttribute('fill', accent);
-      bulb.setAttribute('opacity', '0.18');
-      svg.appendChild(bulb);
-      const last = pts[pts.length-1];
-      const tip = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-      tip.setAttribute('cx', last.x); tip.setAttribute('cy', last.y);
-      tip.setAttribute('r', cw*0.30); tip.setAttribute('fill', 'none');
-      tip.setAttribute('stroke', accent); tip.setAttribute('stroke-width', '2');
-      tip.setAttribute('opacity', '0.5');
-      svg.appendChild(tip);
+      const d = pts.map((p, i) =>
+        (i === 0 ? 'M' : 'L') + p.x.toFixed(2) + ' ' + p.y.toFixed(2)
+      ).join(' ');
+
+      // ── 1) Outline stroke (1px, theme-aware, drawn UNDER the body) ──
+      //  Slightly wider than the body so a 1px rim peeks out on every
+      //  side. Lower opacity than before so it stays subtle and never
+      //  overpowers the digit/notes beneath.
+      const outline = document.createElementNS(NS, 'path');
+      outline.setAttribute('d', d);
+      outline.setAttribute('fill', 'none');
+      outline.setAttribute('stroke', outlineColor);
+      outline.setAttribute('stroke-width', String(strokeWidth + 2));
+      outline.setAttribute('stroke-linecap', 'round');
+      outline.setAttribute('stroke-linejoin', 'round');
+      outline.setAttribute('opacity', '0.55');
+      outline.setAttribute('pointer-events', 'none');
+      g.appendChild(outline);
+
+      // ── 2) Tube body — rounded-cap stroke, REDUCED width + opacity ──
+      //  Round caps keep the line smooth through corners. At 0.14 *
+      //  cellSize width and 0.20 opacity, both numbers and pencil
+      //  marks remain clearly readable through the tube.
+      const tube = document.createElementNS(NS, 'path');
+      tube.setAttribute('d', d);
+      tube.setAttribute('fill', 'none');
+      tube.setAttribute('stroke', color);
+      tube.setAttribute('stroke-width', String(strokeWidth));
+      tube.setAttribute('stroke-linecap', 'round');
+      tube.setAttribute('stroke-linejoin', 'round');
+      tube.setAttribute('opacity', '0.20');
+      tube.setAttribute('pointer-events', 'none');
+      g.appendChild(tube);
+
+      // ── 3) Bulb — single circle at pts[0] (which has offset applied) ──
+      //  Drawn ON TOP of the tube. Because pts[0] is offset together
+      //  with the tube, two thermos sharing a bulb cell render as TWO
+      //  bulbs side by side (with parallelGap between centers), never
+      //  merging into one. Two thermos on adjacent cells naturally
+      //  render side by side since their cell centers are already
+      //  separated by a full cell width.
+      const bulbCx = pts[0].x;
+      const bulbCy = pts[0].y;
+
+      // Bulb outline (1px, theme-aware).
+      const bulbOutline = document.createElementNS(NS, 'circle');
+      bulbOutline.setAttribute('cx', bulbCx.toFixed(2));
+      bulbOutline.setAttribute('cy', bulbCy.toFixed(2));
+      bulbOutline.setAttribute('r', String(bulbR + 1));
+      bulbOutline.setAttribute('fill', 'none');
+      bulbOutline.setAttribute('stroke', outlineColor);
+      bulbOutline.setAttribute('stroke-width', '1');
+      bulbOutline.setAttribute('opacity', '0.55');
+      bulbOutline.setAttribute('pointer-events', 'none');
+      g.appendChild(bulbOutline);
+
+      // Bulb body — REDUCED opacity for readability.
+      const bulb = document.createElementNS(NS, 'circle');
+      bulb.setAttribute('cx', bulbCx.toFixed(2));
+      bulb.setAttribute('cy', bulbCy.toFixed(2));
+      bulb.setAttribute('r', String(bulbR));
+      bulb.setAttribute('fill', color);
+      bulb.setAttribute('opacity', '0.22');
+      bulb.setAttribute('pointer-events', 'none');
+      g.appendChild(bulb);
+
+      // Crisp thin rim — defines the bulb edge.
+      const rim = document.createElementNS(NS, 'circle');
+      rim.setAttribute('cx', bulbCx.toFixed(2));
+      rim.setAttribute('cy', bulbCy.toFixed(2));
+      rim.setAttribute('r', String(bulbR));
+      rim.setAttribute('fill', 'none');
+      rim.setAttribute('stroke', color);
+      rim.setAttribute('stroke-width', '1.2');
+      rim.setAttribute('opacity', '0.55');
+      rim.setAttribute('pointer-events', 'none');
+      g.appendChild(rim);
+
+      // ── 4) Hover (via underlying cell DOM, NOT via SVG hit area) ──
+      //  We deliberately do NOT put a transparent fat stroke inside the
+      //  SVG, because that would steal pointer events from the cell
+      //  divs beneath (which handle click-to-select, numpad entry,
+      //  Notes, Magic Pencil, etc.). Instead, we attach mouseenter /
+      //  mouseleave listeners to the underlying cell <div>s that this
+      //  thermo passes through.
+      if (!this._thermoHoverDetachers) this._thermoHoverDetachers = [];
+      const onEnter = () => {
+        g.classList.add('thermo-hovered');
+        svg.classList.add('thermo-has-hover');
+      };
+      const onLeave = () => {
+        g.classList.remove('thermo-hovered');
+        svg.classList.remove('thermo-has-hover');
+      };
+      for (const cellIdx of cells) {
+        const r = Math.floor(cellIdx / N), c = cellIdx % N;
+        const cellEl = document.querySelector(
+          `.cell[data-row="${r}"][data-col="${c}"]`);
+        if (!cellEl) continue;
+        cellEl.addEventListener('mouseenter', onEnter);
+        cellEl.addEventListener('mouseleave', onLeave);
+        this._thermoHoverDetachers.push(() => {
+          cellEl.removeEventListener('mouseenter', onEnter);
+          cellEl.removeEventListener('mouseleave', onLeave);
+        });
+      }
+
+      svg.appendChild(g);
     });
+  },
+  /** Pick a 1px outline colour that contrasts with the given cell-paper
+   *  colour. Used by renderThermoSVG to satisfy "subtle 1px white/dark
+   *  outline (matching theme)" — white on dark themes, dark on light
+   *  themes. Computed from --paper so it auto-flips with every theme
+   *  in SZ.Themes.list (light, dark, zen, wood, ocean, space, neon). */
+  _thermoOutlineFor(paperHex) {
+    // Parse "#rrggbb" → relative luminance, choose white or dark gray.
+    const m = /^#?([0-9a-f]{6})$/i.exec((paperHex || '').trim());
+    if (!m) return '#ffffff';
+    const r = parseInt(m[1].slice(0, 2), 16) / 255;
+    const g = parseInt(m[1].slice(2, 4), 16) / 255;
+    const b = parseInt(m[1].slice(4, 6), 16) / 255;
+    const lin = (c) => c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    const L = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+    // WCAG-style cut: papers darker than ~30% luminance get a white
+    // outline; lighter papers get a near-black outline.
+    return L < 0.30 ? '#ffffff' : '#1c1917';
   },
 
   /** Render Jigsaw region borders as SVG path with subtle region tint + outer frame. */
@@ -1870,44 +2457,288 @@ SZ.VariantEngine = {
     return segs.join(' ');
   },
 
-  /** Render Arrow circles and paths as SVG (polyline + marker arrowhead). */
+  /** Render Arrow circles and paths as SVG (tapered shaft + sharp arrowhead).
+   *
+   *  Polished "sum-container with directional flow" look:
+   *   • Tapered shaft — thickest where it exits the circle, narrowing toward
+   *     the tip. Drawn segment-by-segment so each piece can have its own
+   *     decreasing width — gives the arrow a sense of motion and direction.
+   *   • Layered shaft (halo → body → inner highlight) for depth.
+   *   • Larger, sharper arrowhead with a clean triangular silhouette and a
+   *     subtle inner bevel — drawn as a polygon at the tip oriented along
+   *     the final segment's direction.
+   *   • Origin knot — small filled disc where the shaft exits the circle,
+   *     visually anchors the start of the arrow.
+   *   • Circle rendered as a "sum container": outer halo → subtle radial
+   *     tint → crisp ring → inner rim shadow → specular highlight, so the
+   *     total cell reads as a vessel the arrow flows out of.
+   *   Logic unchanged. */
   renderArrowSVG(svg, arrows, N, cw, ch, cssVar) {
+    const NS = 'http://www.w3.org/2000/svg';
     const accent2 = cssVar('--accent2');
+    const accent2Dim = cssVar('--accent-dim') || accent2;
+
+    // ── Defs: circle tint gradient + drop-shadow filter ─────────────────
     let defs = svg.querySelector('defs');
-    if (!defs) { defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs'); svg.appendChild(defs); }
-    let marker = defs.querySelector('#arrowhead');
-    if (!marker) {
-      marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
-      marker.setAttribute('id', 'arrowhead');
-      marker.setAttribute('markerWidth', '8'); marker.setAttribute('markerHeight', '6');
-      marker.setAttribute('refX', '8'); marker.setAttribute('refY', '3');
-      marker.setAttribute('orient', 'auto'); marker.setAttribute('markerUnits', 'userSpaceOnUse');
-      const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-      poly.setAttribute('points', '0 0, 8 3, 0 6');
-      poly.setAttribute('fill', accent2); poly.setAttribute('opacity', '0.6');
-      marker.appendChild(poly); defs.appendChild(marker);
-    }
+    if (!defs) { defs = document.createElementNS(NS, 'defs'); svg.appendChild(defs); }
+    defs.querySelectorAll('[id^="arrow-"]').forEach(el => el.remove());
+
+    // Soft radial tint inside the circle so it reads as a "container" for the total.
+    // Opacities are kept LOW so the digit and any notes underneath the circle
+    // remain readable — Arrow puzzles often force the player to read notes
+    // through the circle to make deductions.
+    const circleGrad = document.createElementNS(NS, 'radialGradient');
+    circleGrad.setAttribute('id', 'arrow-circle-grad');
+    circleGrad.setAttribute('cx', '50%');
+    circleGrad.setAttribute('cy', '50%');
+    circleGrad.setAttribute('r', '55%');
+    [
+      ['0%',   '0.12'],
+      ['70%',  '0.06'],
+      ['100%', '0.02']
+    ].forEach(([off, op]) => {
+      const s = document.createElementNS(NS, 'stop');
+      s.setAttribute('offset', off);
+      s.setAttribute('stop-color', accent2);
+      s.setAttribute('stop-opacity', op);
+      circleGrad.appendChild(s);
+    });
+    defs.appendChild(circleGrad);
+
+    // Drop shadow for the circle so it lifts off the cell
+    const shadow = document.createElementNS(NS, 'filter');
+    shadow.setAttribute('id', 'arrow-shadow');
+    shadow.setAttribute('x', '-50%'); shadow.setAttribute('y', '-50%');
+    shadow.setAttribute('width', '200%'); shadow.setAttribute('height', '200%');
+    const fe = document.createElementNS(NS, 'feDropShadow');
+    fe.setAttribute('dx', '0'); fe.setAttribute('dy', '0.6');
+    fe.setAttribute('stdDeviation', '1.1');
+    fe.setAttribute('flood-color', accent2);
+    fe.setAttribute('flood-opacity', '0.40');
+    shadow.appendChild(fe);
+    defs.appendChild(shadow);
+
+    // ── Geometry constants (scale gracefully with cell size) ────────────
+    const circleR     = cw * 0.38;
+    const ringW       = Math.max(2,   cw * 0.07);
+    const pathWHaloMax= Math.max(6,   cw * 0.17);
+    const pathWHaloMin= Math.max(3.5, cw * 0.10);
+    const pathWBodyMax= Math.max(3,   cw * 0.10);
+    const pathWBodyMin= Math.max(1.8, cw * 0.06);
+    const pathWInnerMax= Math.max(1.2, cw * 0.045);
+    const pathWInnerMin= Math.max(0.7, cw * 0.025);
+
+    const lerp = (a, b, t) => a + (b - a) * t;
+
     arrows.forEach(arrow => {
       if (arrow.path.length < 1) return;
       const cr = Math.floor(arrow.circle / N), cc = arrow.circle % N;
       const cx = cc*cw+cw/2, cy = cr*ch+ch/2;
       const pathPts = arrow.path.map(pi => {
         const r = Math.floor(pi / N), c = pi % N;
-        return `${c*cw+cw/2},${r*ch+ch/2}`;
+        return { x: c*cw+cw/2, y: r*ch+ch/2 };
       });
-      const polyline = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
-      polyline.setAttribute('points', `${cx},${cy} ` + pathPts.join(' '));
-      polyline.setAttribute('fill', 'none'); polyline.setAttribute('stroke', accent2);
-      polyline.setAttribute('stroke-width', '2.5'); polyline.setAttribute('stroke-linecap', 'round');
-      polyline.setAttribute('stroke-linejoin', 'round'); polyline.setAttribute('opacity', '0.5');
-      polyline.setAttribute('marker-end', 'url(#arrowhead)');
-      svg.appendChild(polyline);
-      const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-      circle.setAttribute('cx', cx); circle.setAttribute('cy', cy);
-      circle.setAttribute('r', cw*0.38); circle.setAttribute('fill', 'none');
-      circle.setAttribute('stroke', accent2); circle.setAttribute('stroke-width', '2.5');
-      circle.setAttribute('opacity', '0.5');
+
+      // Direction unit vector from circle center toward first path cell —
+      // used to start the shaft just outside the circle (no overlap).
+      const first = pathPts[0];
+      const dx0 = first.x - cx, dy0 = first.y - cy;
+      const dist0 = Math.hypot(dx0, dy0) || 1;
+      const ux0 = dx0 / dist0, uy0 = dy0 / dist0;
+      const startX = cx + ux0 * (circleR + 1);
+      const startY = cy + uy0 * (circleR + 1);
+
+      // ── Build segment list with taper parameters ─────────────────────
+      // Each segment goes from allPts[i] to allPts[i+1] with a width that
+      // tapers from "max" at the start (near circle) to "min" at the tip.
+      const allPts = [{ x: startX, y: startY }, ...pathPts];
+      const segCount = allPts.length - 1;
+
+      // 1) Shaft halo — single path so the glow reads as one continuous aura
+      const haloD = allPts.map((p, i) => (i === 0 ? 'M' : 'L') + p.x.toFixed(2) + ' ' + p.y.toFixed(2)).join(' ');
+      const halo = document.createElementNS(NS, 'path');
+      halo.setAttribute('d', haloD);
+      halo.setAttribute('fill', 'none');
+      halo.setAttribute('stroke', accent2);
+      halo.setAttribute('stroke-width', String(pathWHaloMax));
+      halo.setAttribute('stroke-linecap', 'round');
+      halo.setAttribute('stroke-linejoin', 'round');
+      halo.setAttribute('opacity', '0.08');
+      svg.appendChild(halo);
+
+      // 2) Tapered shaft body — drawn segment-by-segment so each piece can
+      //    have its own (decreasing) stroke width. Thicker near the circle,
+      //    thinner toward the tip.
+      for (let i = 0; i < segCount; i++) {
+        const tMid = (i + 0.5) / segCount;       // 0 at start, →1 at tip
+        const wBody  = lerp(pathWBodyMax,  pathWBodyMin,  tMid);
+        const wInner = lerp(pathWInnerMax, pathWInnerMin, tMid);
+
+        // Body
+        const seg = document.createElementNS(NS, 'line');
+        seg.setAttribute('x1', allPts[i].x.toFixed(2));
+        seg.setAttribute('y1', allPts[i].y.toFixed(2));
+        seg.setAttribute('x2', allPts[i + 1].x.toFixed(2));
+        seg.setAttribute('y2', allPts[i + 1].y.toFixed(2));
+        seg.setAttribute('stroke', accent2);
+        seg.setAttribute('stroke-width', String(wBody));
+        seg.setAttribute('stroke-linecap', 'round');
+        // Lower opacity so notes/numbers in path cells stay readable through
+        // the shaft. The shaft still reads as a continuous line because the
+        // halo (0.08) + body (0.30) layer into a soft-but-visible trace.
+        seg.setAttribute('opacity', '0.30');
+        svg.appendChild(seg);
+
+        // Inner highlight — thin brighter core, reads as light catching the shaft
+        const inner = document.createElementNS(NS, 'line');
+        inner.setAttribute('x1', allPts[i].x.toFixed(2));
+        inner.setAttribute('y1', allPts[i].y.toFixed(2));
+        inner.setAttribute('x2', allPts[i + 1].x.toFixed(2));
+        inner.setAttribute('y2', allPts[i + 1].y.toFixed(2));
+        inner.setAttribute('stroke', accent2Dim);
+        inner.setAttribute('stroke-width', String(wInner));
+        inner.setAttribute('stroke-linecap', 'round');
+        inner.setAttribute('opacity', '0.40');
+        svg.appendChild(inner);
+      }
+
+      // 2.5) Vertex smoothing dots — small filled circles at every internal
+      //      vertex where the path changes direction. Round line-caps on
+      //      each segment already overlap nicely at 90° turns, but for
+      //      sharp angled paths (diagonal moves, 45°/135° joints) the
+      //      caps can leave a visible notch on the inner side of the
+      //      turn. A small disc the size of the local body width closes
+      //      that notch so the shaft reads as a continuous tapered curve
+      //      through every turn — even on long zig-zag / winding arrows.
+      if (segCount >= 2) {
+        for (let i = 1; i < allPts.length - 1; i++) {
+          const pPrev = allPts[i - 1], pCur = allPts[i], pNext = allPts[i + 1];
+          const d1x = pCur.x - pPrev.x, d1y = pCur.y - pPrev.y;
+          const d2x = pNext.x - pCur.x, d2y = pNext.y - pCur.y;
+          // Skip collinear vertices (no turn = no notch to fill)
+          const cross = d1x * d2y - d1y * d2x;
+          if (Math.abs(cross) < 0.001) continue;
+          // Taper width at this vertex (midway between adjacent segments)
+          const tHere = i / segCount;
+          const wHere = lerp(pathWBodyMax, pathWBodyMin, tHere);
+          const knot = document.createElementNS(NS, 'circle');
+          knot.setAttribute('cx', pCur.x.toFixed(2));
+          knot.setAttribute('cy', pCur.y.toFixed(2));
+          knot.setAttribute('r', (wHere * 0.55).toFixed(2));
+          knot.setAttribute('fill', accent2);
+          knot.setAttribute('opacity', '0.35');
+          svg.appendChild(knot);
+          // Inner highlight on the knot — matches the inner-highlight
+          // pass on the shaft so the joint reads as the same material.
+          const knotInner = document.createElementNS(NS, 'circle');
+          knotInner.setAttribute('cx', pCur.x.toFixed(2));
+          knotInner.setAttribute('cy', pCur.y.toFixed(2));
+          knotInner.setAttribute('r', (wHere * 0.28).toFixed(2));
+          knotInner.setAttribute('fill', accent2Dim);
+          knotInner.setAttribute('opacity', '0.45');
+          svg.appendChild(knotInner);
+        }
+      }
+
+      // 3) Arrowhead — large, sharp, clean triangle at the tip, oriented
+      //    along the direction of the final segment. Drawn as a polygon
+      //    with a small inner bevel for a more "cut" silhouette.
+      const tipP = allPts[allPts.length - 1];
+      const prevP = allPts[allPts.length - 2];
+      const dxT = tipP.x - prevP.x, dyT = tipP.y - prevP.y;
+      const lenT = Math.hypot(dxT, dyT) || 1;
+      const uxT = dxT / lenT, uyT = dyT / lenT;        // forward unit vector
+      const pxT = -uyT, pyT = uxT;                     // perpendicular unit vector
+      const headLen = cw * 0.34;
+      const headHalf = cw * 0.16;
+      // Tip is at tipP. Base of the head sits back along the shaft.
+      const baseX = tipP.x - uxT * headLen;
+      const baseY = tipP.y - uyT * headLen;
+      // Three corners of the arrowhead triangle
+      const tip   = `${tipP.x.toFixed(2)},${tipP.y.toFixed(2)}`;
+      const baseL = `${(baseX + pxT * headHalf).toFixed(2)},${(baseY + pyT * headHalf).toFixed(2)}`;
+      const baseR = `${(baseX - pxT * headHalf).toFixed(2)},${(baseY - pyT * headHalf).toFixed(2)}`;
+      const head = document.createElementNS(NS, 'polygon');
+      head.setAttribute('points', `${tip} ${baseL} ${baseR}`);
+      head.setAttribute('fill', accent2);
+      head.setAttribute('opacity', '0.55');
+      head.setAttribute('stroke', accent2);
+      head.setAttribute('stroke-width', '0.5');
+      head.setAttribute('stroke-linejoin', 'round');
+      svg.appendChild(head);
+
+      // Subtle inner bevel — a thinner polygon offset toward the base,
+      // gives the arrowhead a faceted "cut" look.
+      const bevelTip   = `${(tipP.x - uxT * headLen * 0.15).toFixed(2)},${(tipP.y - uyT * headLen * 0.15).toFixed(2)}`;
+      const bevelBaseL = `${(baseX + pxT * headHalf * 0.45 + uxT * headLen * 0.30).toFixed(2)},${(baseY + pyT * headHalf * 0.45 + uyT * headLen * 0.30).toFixed(2)}`;
+      const bevelBaseR = `${(baseX - pxT * headHalf * 0.45 + uxT * headLen * 0.30).toFixed(2)},${(baseY - pyT * headHalf * 0.45 + uyT * headLen * 0.30).toFixed(2)}`;
+      const bevel = document.createElementNS(NS, 'polygon');
+      bevel.setAttribute('points', `${bevelTip} ${bevelBaseL} ${bevelBaseR}`);
+      bevel.setAttribute('fill', accent2Dim);
+      bevel.setAttribute('opacity', '0.30');
+      svg.appendChild(bevel);
+
+      // 4) Origin knot — small filled disc where the shaft exits the circle,
+      //    visually anchors the arrow's start.
+      const knot = document.createElementNS(NS, 'circle');
+      knot.setAttribute('cx', startX.toFixed(2));
+      knot.setAttribute('cy', startY.toFixed(2));
+      knot.setAttribute('r', String(Math.max(1.5, cw * 0.045)));
+      knot.setAttribute('fill', accent2);
+      knot.setAttribute('opacity', '0.40');
+      svg.appendChild(knot);
+
+      // 5) Circle halo — soft glow behind the circle
+      const cHalo = document.createElementNS(NS, 'circle');
+      cHalo.setAttribute('cx', cx);
+      cHalo.setAttribute('cy', cy);
+      cHalo.setAttribute('r', String(circleR * 1.30));
+      cHalo.setAttribute('fill', accent2);
+      cHalo.setAttribute('opacity', '0.10');
+      svg.appendChild(cHalo);
+
+      // 6) Circle fill — subtle radial tint (the "sum container")
+      const cFill = document.createElementNS(NS, 'circle');
+      cFill.setAttribute('cx', cx);
+      cFill.setAttribute('cy', cy);
+      cFill.setAttribute('r', String(circleR));
+      cFill.setAttribute('fill', 'url(#arrow-circle-grad)');
+      cFill.setAttribute('filter', 'url(#arrow-shadow)');
+      svg.appendChild(cFill);
+
+      // 7) Circle outline — crisp thicker ring for clear definition
+      const circle = document.createElementNS(NS, 'circle');
+      circle.setAttribute('cx', cx);
+      circle.setAttribute('cy', cy);
+      circle.setAttribute('r', String(circleR));
+      circle.setAttribute('fill', 'none');
+      circle.setAttribute('stroke', accent2);
+      circle.setAttribute('stroke-width', String(ringW));
+      circle.setAttribute('opacity', '0.50');
       svg.appendChild(circle);
+
+      // 8) Inner rim shadow — thin darker ring just inside the outline,
+      //    gives the circle depth so it reads as a vessel rather than a flat disc.
+      const innerRim = document.createElementNS(NS, 'circle');
+      innerRim.setAttribute('cx', cx);
+      innerRim.setAttribute('cy', cy);
+      innerRim.setAttribute('r', String(circleR - ringW * 0.6));
+      innerRim.setAttribute('fill', 'none');
+      innerRim.setAttribute('stroke', accent2);
+      innerRim.setAttribute('stroke-width', '0.8');
+      innerRim.setAttribute('opacity', '0.18');
+      svg.appendChild(innerRim);
+
+      // 9) Specular highlight on the circle — small bright crescent upper-left
+      const hl = document.createElementNS(NS, 'ellipse');
+      hl.setAttribute('cx', cx - circleR * 0.30);
+      hl.setAttribute('cy', cy - circleR * 0.36);
+      hl.setAttribute('rx', String(circleR * 0.28));
+      hl.setAttribute('ry', String(circleR * 0.18));
+      hl.setAttribute('fill', '#ffffff');
+      hl.setAttribute('opacity', '0.30');
+      hl.setAttribute('transform', `rotate(-25 ${cx - circleR * 0.30} ${cy - circleR * 0.36})`);
+      svg.appendChild(hl);
     });
   }
 };
@@ -2130,7 +2961,7 @@ SZ.Modes = {
   zen: {
     name: 'Zen', icon: '🧘',
     timer: false, maxMistakes: Infinity,
-    hints: 5, undo: true, autoCheck: true, showConflicts: true,
+    hints: 5, unlimitedHints: true, undo: true, autoCheck: true, showConflicts: true,
     showMistakes: true, xpMultiplier: 1.0,
     desc: 'Relaxing, no pressure'
   },
@@ -2144,28 +2975,28 @@ SZ.Modes = {
   survival: {
     name: 'Survival', icon: '💀',
     timer: true, maxMistakes: 3,
-    hints: 1, undo: true, autoCheck: true, showConflicts: true,
+    hints: 1, tieredHints: true, assistLocked: true, undo: true, autoCheck: true, showConflicts: true,
     showMistakes: true, xpMultiplier: 1.5,
     desc: '3 mistakes and you\'re out'
   },
   hardcore: {
     name: 'Hardcore', icon: '🔥',
     timer: true, maxMistakes: Infinity,
-    hints: 0, undo: false, autoCheck: false, showConflicts: false,
+    hints: 0, tieredHints: true, assistLocked: true, undo: false, autoCheck: false, showConflicts: false,
     showMistakes: false, xpMultiplier: 2.0,
     desc: 'No hints, no undo, no mercy'
   },
   practice: {
     name: 'Practice', icon: '📝',
     timer: false, maxMistakes: Infinity,
-    hints: 5, undo: true, autoCheck: true, showConflicts: true,
+    hints: 5, unlimitedHints: true, undo: true, autoCheck: true, showConflicts: true,
     showMistakes: true, xpMultiplier: 0.8,
     desc: 'Instant feedback on errors'
   },
   blind: {
     name: 'Blind', icon: '🙈',
     timer: true, maxMistakes: Infinity,
-    hints: 0, undo: true, autoCheck: false, showConflicts: false,
+    hints: 0, tieredHints: true, assistLocked: true, undo: true, autoCheck: false, showConflicts: false,
     showMistakes: false, xpMultiplier: 1.8,
     desc: 'Mistakes revealed only at end'
   }
@@ -2183,6 +3014,151 @@ SZ.Difficulties = {
   expert:   { name: 'Expert',   removeRatio: 0.65, xpMult: 2.0 },
   master:   { name: 'Master',   removeRatio: 0.72, xpMult: 2.5 },
   extreme:  { name: 'Extreme',  removeRatio: 0.78, xpMult: 3.0 }
+};
+
+/* ═══════════════════════════════════════════════════════
+   SZ.ConstraintProfiles — Variant-specific difficulty knobs
+   ──────────────────────────────────────────────────────
+   Each variant gets its own per-difficulty profile so the
+   *variant itself* (not just the givens count) scales with
+   difficulty. This is what gives each mode its identity:
+
+   • Thermo: harder levels mean longer thermos, steeper value
+     ramps, more thermos sharing cells (cross-thermo deductions),
+     and more box-spanning thermos (cross-box thermo logic).
+
+   • Arrow: harder levels mean more arrows, longer paths,
+     more shared path cells between arrows, and a stronger
+     bias toward low circle sums (which force specific digit
+     combinations and drive arrow-based deductions).
+
+   Profiles are consumed by SZ.Constraints.generateThermometers
+   and SZ.Constraints.generateArrows.
+   ═══════════════════════════════════════════════════════ */
+SZ.ConstraintProfiles = {
+  thermo: {
+    // 'valueStep' controls how aggressively each thermo climbs:
+    //   'slow'  → always pick the smallest next higher value (gentle ramp,
+    //             long thermos with many constrained cells)
+    //   'medium'→ prefer values 1-2 above current (moderate ramp)
+    //   'steep' → prefer values 2+ above current (steep ramp, spans more
+    //             of the 1-9 range per thermo, harder to deduce)
+    // 'allowOverlap' lets thermos share cells — shared cells become
+    //   cross-thermo deduction hotspots at higher levels.
+    // 'minBoxSpan'/'maxBoxSpan' target how many 3×3 boxes each thermo
+    //   should cross — box-spanning thermos force cross-box logic.
+    //
+    // Length ranges are calibrated to what is realistically achievable on
+    // a 9×9 sudoku solution with strictly-increasing orthogonal paths.
+    // (A 7+ cell strictly-increasing orthogonal path is already quite rare
+    // on a random solution — going higher would force the generator into
+    // its fallback path and actually reduce difficulty.)
+    beginner: { count: 2, minLen: 3, maxLen: 4, allowOverlap: false, minBoxSpan: 1, maxBoxSpan: 2, valueStep: 'slow'  },
+    easy:     { count: 3, minLen: 3, maxLen: 5, allowOverlap: false, minBoxSpan: 1, maxBoxSpan: 2, valueStep: 'slow'  },
+    medium:   { count: 4, minLen: 4, maxLen: 6, allowOverlap: true,  minBoxSpan: 2, maxBoxSpan: 3, valueStep: 'medium' },
+    hard:     { count: 5, minLen: 4, maxLen: 6, allowOverlap: true,  minBoxSpan: 2, maxBoxSpan: 3, valueStep: 'medium' },
+    expert:   { count: 6, minLen: 4, maxLen: 6, allowOverlap: true,  minBoxSpan: 2, maxBoxSpan: 4, valueStep: 'medium' },
+    master:   { count: 7, minLen: 4, maxLen: 7, allowOverlap: true,  minBoxSpan: 3, maxBoxSpan: 4, valueStep: 'medium' },
+    extreme:  { count: 8, minLen: 5, maxLen: 7, allowOverlap: true,  minBoxSpan: 3, maxBoxSpan: 5, valueStep: 'steep' }
+  },
+  arrow: {
+    // ── Arrow-Sudoku design rules (per variant spec) ────────────────
+    // Every arrow starts from a single-cell circle (bulb). The digit in
+    // the circle equals the sum of all digits along its connected arrow
+    // path. Arrows NEVER share cells (no circle on another arrow's path,
+    // no path overlap) and NEVER cross each other geometrically — this
+    // keeps the board visually clean and forces cross-arrow deduction
+    // to happen through peers (same row / col / box), not literal cell
+    // overlap.
+    //
+    // ── shapeMix ────────────────────────────────────────────────────
+    // Per-difficulty pool of path silhouettes the generator samples
+    // from. Each arrow picks a shape from this pool, then a shape-biased
+    // DFS grows the path toward that silhouette:
+    //   'straight'      — single direction, no turns
+    //   'L'             — exactly one 90° (or 45°) turn
+    //   'zigzag1'       — 2–3 alternating turns
+    //   'zigzag2'       — 3+ turns, longer zig-zag
+    //   'sharp'         — uses diagonal moves for non-90° angles
+    //   'winding'       — 4+ cells, multiple varied turns
+    //   'long_winding'  — 5+ cells, complex winding path
+    // Beginner/easy are dominated by straight + L (clean, approachable).
+    // Medium introduces sharp angled paths. Hard+ leans into zig-zag and
+    // winding silhouettes. Expert/master/extreme are dominated by long
+    // winding arrows — every arrow becomes a meaningful deduction.
+    //
+    // ── allowDiag ───────────────────────────────────────────────────
+    // Enables King's-move (8-neighbor) connections between adjacent
+    // cells. Without it, paths are restricted to 4-neighbor orthogonal
+    // moves → only 90° turns possible → only straight + L shapes.
+    // With it, diagonal moves produce sharp 45° angles and unlock the
+    // zig-zag / sharp / winding silhouettes that make higher-difficulty
+    // arrows feel handcrafted.
+    //
+    // ── lowSumBias ──────────────────────────────────────────────────
+    // Probability of preferring circle cells whose solution value is
+    // small (3–7). Small sums strongly constrain the path (sum=3 forces
+    // {1,2}, sum=4 forces {1,3}, sum=5 forces {1,4}/{2,3}…), making the
+    // arrow itself the primary deduction driver. Higher difficulty
+    // lowers this bias so a wider range of circle sums (and therefore
+    // more varied arrow interactions) come into play.
+    //
+    // ── minBoxSpan / maxBoxSpan ─────────────────────────────────────
+    // Target how many 3×3 boxes each arrow's circle+path should cross.
+    // Box-spanning arrows force cross-box arrow logic at higher levels.
+    //
+    // Length ranges are calibrated to feasibility with 8-neighbor moves:
+    // an N-cell arrow path needs values summing to ≤9 with no row/col/
+    // box duplicates among same-region cells. With diagonal moves
+    // enabled at medium+, longer paths become achievable because the
+    // path can weave through low-value cells across different regions.
+    beginner: { count: 2, minLen: 2, maxLen: 3, allowDiag: false, shapeMix: ['straight','straight','L'],                                       lowSumBias: 0.80, minBoxSpan: 1, maxBoxSpan: 2 },
+    easy:     { count: 3, minLen: 2, maxLen: 3, allowDiag: false, shapeMix: ['L','L','zigzag1'],                                             lowSumBias: 0.70, minBoxSpan: 1, maxBoxSpan: 2 },
+    medium:   { count: 4, minLen: 2, maxLen: 4, allowDiag: true,  shapeMix: ['L','zigzag1','zigzag2','sharp'],                                lowSumBias: 0.55, minBoxSpan: 2, maxBoxSpan: 3 },
+    hard:     { count: 4, minLen: 3, maxLen: 5, allowDiag: true,  shapeMix: ['L','zigzag1','zigzag2','sharp','winding'],                      lowSumBias: 0.45, minBoxSpan: 2, maxBoxSpan: 3 },
+    expert:   { count: 5, minLen: 3, maxLen: 5, allowDiag: true,  shapeMix: ['zigzag1','zigzag2','sharp','winding','winding'],                lowSumBias: 0.35, minBoxSpan: 2, maxBoxSpan: 4 },
+    master:   { count: 6, minLen: 4, maxLen: 6, allowDiag: true,  shapeMix: ['zigzag2','sharp','winding','winding','long_winding'],           lowSumBias: 0.25, minBoxSpan: 3, maxBoxSpan: 4 },
+    extreme:  { count: 7, minLen: 4, maxLen: 7, allowDiag: true,  shapeMix: ['zigzag2','sharp','winding','long_winding','long_winding'],      lowSumBias: 0.20, minBoxSpan: 3, maxBoxSpan: 5 }
+  }
+};
+
+/* ═══════════════════════════════════════════════════════
+   SZ.Assist — Assist-tool policy (Hint / Logic Hint / Magic Pencil)
+   Centralizes the rules so mode + difficulty + challenge status
+   never have to be cross-checked ad hoc at each call site:
+     • Daily/Weekly Challenges: zero help, no way to enable it.
+     • Survival/Hardcore/Blind: 1 hint at Beginner/Easy/Medium,
+       0 at Hard and above. Logic Hint + Magic Pencil are locked
+       until the player explicitly confirms they want them on.
+     • Everything else: each mode's own configured hint count.
+     • Zen/Practice: unlimited (see modeConf.unlimitedHints).
+   ═══════════════════════════════════════════════════════ */
+SZ.Assist = {
+  LOW_TIERS: ['beginner', 'easy', 'medium'],
+
+  isCompetitive(challengeType) {
+    return challengeType === 'daily' || challengeType === 'weekly';
+  },
+
+  /** How many direct-fill Hints this mode+difficulty combo allows (never Infinity — see unlimitedHints for that). */
+  hintCap(mode, difficulty, challengeType) {
+    if (this.isCompetitive(challengeType)) return 0;
+    const modeConf = SZ.Modes[mode];
+    if (modeConf.tieredHints) return this.LOW_TIERS.includes(difficulty) ? 1 : 0;
+    return modeConf.hints;
+  },
+
+  /** Whether Logic Hint / Magic Pencil are usable right now without further confirmation. */
+  isUnlocked(mode, challengeType, assistUnlocked) {
+    if (this.isCompetitive(challengeType)) return false;
+    const modeConf = SZ.Modes[mode];
+    return !modeConf.assistLocked || !!assistUnlocked;
+  },
+
+  /** Whether the "enable it anyway" confirm flow should even be offered (never during challenges). */
+  canOfferUnlock(mode, challengeType) {
+    return !this.isCompetitive(challengeType) && !!SZ.Modes[mode].assistLocked;
+  }
 };
 
 
@@ -2371,6 +3347,42 @@ SZ.Constraints = {
     return conflicted;
   },
 
+  /** Fold any stray single-cell cage into an adjacent cage instead of
+   *  leaving it as its own "cage". A 1-cell cage's sum literally equals
+   *  that cell's value — it's not a deduction, just a free digit, and it
+   *  clutters the board with a colored box that provides no solving value.
+   *  Returns false if a singleton couldn't be merged cleanly (caller
+   *  should treat the whole generation attempt as failed and retry). */
+  _mergeSingletonCages(cages, solution, N) {
+    const rawNeighbors = (idx) => {
+      const r = Math.floor(idx / N), c = idx % N;
+      const ns = [];
+      if (r > 0) ns.push(idx - N);
+      if (r < N - 1) ns.push(idx + N);
+      if (c > 0) ns.push(idx - 1);
+      if (c < N - 1) ns.push(idx + 1);
+      return ns;
+    };
+    for (let i = cages.length - 1; i >= 0; i--) {
+      if (cages[i].cells.length !== 1) continue;
+      const soloIdx = cages[i].cells[0];
+      let merged = false;
+      for (const nb of rawNeighbors(soloIdx)) {
+        const target = cages.find(c => c !== cages[i] && c.cells.includes(nb));
+        if (!target || target.cells.length >= 6) continue; // keep merged cages readable
+        if (target.cells.some(ci => solution[ci] === solution[soloIdx])) continue; // would create a duplicate
+        target.cells.push(soloIdx);
+        target.cells.sort((a, b) => a - b);
+        target.sum += solution[soloIdx];
+        cages.splice(i, 1);
+        merged = true;
+        break;
+      }
+      if (!merged) return false;
+    }
+    return true;
+  },
+
   /** Generate Killer cages: contiguous cells covering the entire grid.
    *  Ensures no cage has duplicate digits in the temp solution, so the
    *  final solver always finds a valid arrangement quickly.              */
@@ -2441,6 +3453,9 @@ SZ.Constraints = {
       }
       if (abort) continue;
       if (!assigned.every(a => a)) continue;
+      // Fold any leftover single-cell cage into a neighbor rather than
+      // leaving a "sum" that's really just a free digit (see note above).
+      if (!this._mergeSingletonCages(cages, solution, N)) continue;
       // Verify no duplicates in any cage (guaranteed by growCage, but be safe)
       let clean = true;
       for (const c of cages) {
@@ -2449,7 +3464,8 @@ SZ.Constraints = {
       }
       if (clean) return { constraints: cages, regionMap: null };
     }
-    // Last-resort: single-cell cages (trivially valid)
+    // Last-resort: single-cell cages (trivially valid). Only reached after
+    // maxAttempts consecutive failures — extremely rare in practice.
     const cages = [];
     for (let i = 0; i < total; i++) {
       cages.push({ type: 'killer', cells: [i], sum: solution[i] });
@@ -2517,13 +3533,14 @@ SZ.Constraints = {
         }
         if (abort) continue;
         if (!assigned.every(a => a)) continue;
+        if (!this._mergeSingletonCages(cages, solution, N)) continue;
         let clean = true;
         for (const c of cages) {
           if (new Set(c.cells.map(i => solution[i])).size !== c.cells.length) { clean = false; break; }
         }
         if (clean) return { constraints: cages, regionMap: null };
       }
-      // Fallback: single-cell cages
+      // Fallback: single-cell cages (extremely rare — only after maxAttempts failures)
       const cages = [];
       for (let i = 0; i < total; i++) {
         cages.push({ type: 'killer', cells: [i], sum: solution[i] });
@@ -2546,145 +3563,884 @@ SZ.Constraints = {
     return { constraints: cages, regionMap: null };
   },
 
-  /** Generate thermometer data using a temp solution so paths are strictly increasing. */
-  generateThermometers(solution, state) {
+  /** Generate thermometer data using a temp solution so paths are strictly
+   *  increasing. Difficulty-aware: each level uses a profile from
+   *  SZ.ConstraintProfiles.thermo to control thermo count, length, value-ramp
+   *  steepness, cell overlap, and box-span — so harder levels actually
+   *  require deeper thermo deductions, not just fewer givens.
+   *
+   *  @param {number[]} solution - full solved board
+   *  @param {object}   state    - game state (size, boxW, boxH, ...)
+   *  @param {string}   difficulty - one of SZ.Difficulties keys (default 'medium')
+   */
+  generateThermometers(solution, state, difficulty = 'medium') {
+    // ═══════════════════════════════════════════════════════════════════
+    //  RELAXED THERMO GENERATOR (v2 — allows cell sharing)
+    // ═══════════════════════════════════════════════════════════════════
+    //  Spec (revised):
+    //   • Thermos MAY share non-bulb cells (cross-thermo deduction
+    //     hotspots at higher difficulties). Per-cell overlap is capped
+    //     at 2 (maxUse) so the network stays solvable and doesn't
+    //     degenerate into a knot.
+    //   • BULB EXCLUSIVITY: no two thermos may share cells[0]. The
+    //     bulb is the visual identity of a thermo — merging bulbs
+    //     would create the "single stem with multiple bulbs" look
+    //     the spec explicitly forbids. Two thermos sharing a bulb
+    //     cell would also overlap their tube starts perfectly.
+    //   • Each thermo is a strictly STRAIGHT or L-shaped path (≤ 1
+    //     90° turn, no branching), 3–7 cells long, strictly
+    //     increasing, bulb at the lowest-value end.
+    //   • Graceful count/length reduction if the target can't be met
+    //     (rather than allowing >2 overlaps per cell).
+    //   • After generation, a validation pass asserts bulb exclusivity,
+    //     L-shape, and strictly-increasing; logs console.warn on any
+    //     violation.
+    //
+    //  Visual separation between thermos that share cells is handled
+    //  by renderThermoSVG's perpendicular-offset logic: parallel tubes
+    //  with a small consistent gap, bulbs side by side.
+    // ═══════════════════════════════════════════════════════════════════
     const N = state.size;
     if (N !== 9) { return { constraints: [], regionMap: null }; }
-    const thermos = [];
-    const occupied = new Set();
-    const maxThermos = 2 + Math.floor(Math.random() * 2);
 
-    for (let t = 0; t < maxThermos; t++) {
-      const avail = [...Array(N * N).keys()].filter(i => !occupied.has(i));
-      if (avail.length < 3) break;
-      // Start from a cell with low value (1-3), grow to higher values
-      const lowCells = avail.filter(i => solution[i] <= 3);
-      if (lowCells.length === 0) break;
-      const start = lowCells[Math.floor(Math.random() * lowCells.length)];
-      const path = [start];
-      occupied.add(start);
-      const target = 3 + Math.floor(Math.random() * 3);
-      let curVal = solution[start];
-      while (path.length < target) {
-        const last = path[path.length - 1];
-        const r = Math.floor(last / N), c = last % N;
-        const ns = [[r-1,c],[r+1,c],[r,c-1],[r,c+1]]
-          .filter(([rr,cc]) => rr>=0&&rr<N&&cc>=0&&cc<N)
-          .map(([rr,cc]) => rr*N+cc)
-          .filter(i => !occupied.has(i) && solution[i] > curVal);
-        if (ns.length === 0) break;
-        // Sort by value ascending for consistent growth
-        ns.sort((a, b) => solution[a] - solution[b]);
-        const next = ns[0]; // Smallest value > curVal
-        path.push(next);
-        occupied.add(next);
-        curVal = solution[next];
+    const profile = SZ.ConstraintProfiles.thermo[difficulty] ||
+                    SZ.ConstraintProfiles.thermo.medium;
+    const valueStep    = profile.valueStep;
+    const minBoxSpan   = profile.minBoxSpan;
+    const maxBoxSpan   = profile.maxBoxSpan;
+    const allowOverlap = profile.allowOverlap; // restored: cell sharing at medium+
+
+    const bw = state.boxW, bh = state.boxH;
+    const boxOf = (idx) => {
+      const r = Math.floor(idx / N), c = idx % N;
+      return Math.floor(r / bh) * (N / bw) + Math.floor(c / bw);
+    };
+
+    const rcOf = (idx) => [Math.floor(idx / N), idx % N];
+    const orthoNeighbors = (idx) => {
+      const [r, c] = rcOf(idx);
+      return [[r-1,c],[r+1,c],[r,c-1],[r,c+1]]
+        .filter(([rr,cc]) => rr>=0 && rr<N && cc>=0 && cc<N)
+        .map(([rr,cc]) => rr*N+cc);
+    };
+
+    // Pick the next-higher neighbour according to the difficulty's
+    // valueStep policy. Returns -1 if nothing valid.
+    const pickNext = (curVal, candidates, useCount, maxUse) => {
+      const ok = candidates
+        .filter(i => useCount[i] < maxUse && solution[i] > curVal)
+        .sort((a, b) => solution[a] - solution[b]);
+      if (ok.length === 0) return -1;
+      if (valueStep === 'slow')  return ok[0];
+      if (valueStep === 'steep') {
+        const far = ok.filter(i => solution[i] >= curVal + 2);
+        return far.length > 0 ? far[Math.floor(Math.random() * far.length)]
+                              : ok[ok.length - 1];
       }
-      if (path.length >= 3) thermos.push({ type: 'thermo', cells: path });
-    }
+      // 'medium' — prefer values 1–2 above current, with variety.
+      const close = ok.filter(i => solution[i] <= curVal + 2);
+      return close.length > 0
+        ? close[Math.floor(Math.random() * close.length)]
+        : ok[0];
+    };
 
-    if (thermos.length === 0) {
-      // Fallback: single 2-cell thermo
-      for (let i = 0; i < N*N; i++) {
-        if (occupied.has(i)) continue;
-        const r = Math.floor(i / N), c = i % N;
-        const ns = [[r-1,c],[r+1,c],[r,c-1],[r,c+1]]
-          .filter(([rr,cc]) => rr>=0&&rr<N&&cc>=0&&cc<N)
-          .map(([rr,cc]) => rr*N+cc)
-          .filter(j => !occupied.has(j) && solution[j] > solution[i]);
-        if (ns.length > 0) {
-          const next = ns[Math.floor(Math.random() * ns.length)];
-          thermos.push({ type: 'thermo', cells: [i, next] });
+    // ── Grow a strictly STRAIGHT or L-shaped thermo path ──────────────
+    //  Leg 1 grows in one direction from the bulb. An optional single
+    //  90° turn (the "L") is allowed; after that, no further turns.
+    //  Strictly increasing along the path. Returns number[] of length
+    //  ≥ 3, or null if the path can't even reach length 3.
+    const tryGrowThermo = (startIdx, useCount, maxUse, targetLen) => {
+      const path = [startIdx];
+      const [sr, sc] = rcOf(startIdx);
+      let curVal = solution[startIdx];
+
+      const first = pickNext(curVal, orthoNeighbors(startIdx), useCount, maxUse);
+      if (first < 0) return null;
+      path.push(first);
+      curVal = solution[first];
+
+      let dirR = Math.floor(first / N) - sr;
+      let dirC = (first % N) - sc;
+      let turned = false;
+
+      while (path.length < targetLen) {
+        const [cr, cc] = rcOf(path[path.length - 1]);
+        const candidates = [];
+        const straightCell = (cr + dirR) * N + (cc + dirC);
+        if (cr + dirR >= 0 && cr + dirR < N && cc + dirC >= 0 && cc + dirC < N) {
+          candidates.push(straightCell);
+        }
+        if (!turned) {
+          // The two 90° rotations of (dirR, dirC) — only one L-turn allowed.
+          const perpDirs = [[-dirC, dirR], [dirC, -dirR]];
+          for (const [pdr, pdc] of perpDirs) {
+            const pr = cr + pdr, pc = cc + pdc;
+            if (pr >= 0 && pr < N && pc >= 0 && pc < N) {
+              candidates.push(pr * N + pc);
+            }
+          }
+        }
+        // Random order so the L doesn't bias toward one rotation direction.
+        for (let i = candidates.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+        }
+
+        let next = -1, nextIsTurn = false, nextDirR = dirR, nextDirC = dirC;
+        for (const cand of candidates) {
+          if (useCount[cand] >= maxUse) continue;
+          if (solution[cand] <= curVal) continue;
+          if (cand !== straightCell) {
+            nextIsTurn = true;
+            nextDirR = Math.floor(cand / N) - cr;
+            nextDirC = (cand % N) - cc;
+          } else {
+            nextIsTurn = false;
+            nextDirR = dirR;
+            nextDirC = dirC;
+          }
+          next = cand;
           break;
         }
-      }
-    }
-    return { constraints: thermos, regionMap: null };
-  },
+        if (next < 0) break;
 
-  /** Generate arrow data from a temp solution: picks paths whose values sum to the circle's value. */
-  generateArrows(solution, state) {
-    const N = state.size;
-    if (N !== 9) { return { constraints: [], regionMap: null }; }
-    const arrows = [];
-    const occupied = new Set();
-    // Sort cells so we try larger values first (more chance of finding valid sums)
-    const order = [...Array(N * N).keys()].sort((a, b) => solution[b] - solution[a]);
-    const maxArrows = 2 + Math.floor(Math.random() * 2); // 2-3 arrows
-
-    for (const circle of order) {
-      if (arrows.length >= maxArrows) break;
-      if (occupied.has(circle)) continue;
-      const circVal = solution[circle];
-      if (circVal < 3) continue; // Need at least 2 path cells, min sum=1+2=3
-
-      // Find a connected path whose values sum to circVal
-      const queue = [[circle, [], 0]];
-      const visited = new Set([circle]);
-      let best = null;
-      while (queue.length > 0) {
-        const [idx, path, sum] = queue.shift();
-        const r = Math.floor(idx / N), c = idx % N;
-        const neighbors = [[r-1,c],[r+1,c],[r,c-1],[r,c+1]]
-          .filter(([rr,cc]) => rr>=0&&rr<N&&cc>=0&&cc<N)
-          .map(([rr,cc]) => rr*N+cc)
-          .filter(i => !visited.has(i) && !occupied.has(i) && i !== circle);
-        for (const ni of neighbors) {
-          const ns = sum + solution[ni];
-          if (ns > circVal) continue;
-          const np = [...path, ni];
-          if (ns === circVal && np.length >= 2) {
-            best = { path: np };
-            queue.length = 0; // break out
-            break;
-          }
-          if (np.length < 4) {
-            visited.add(ni);
-            queue.push([ni, np, ns]);
-          }
+        path.push(next);
+        curVal = solution[next];
+        if (nextIsTurn) {
+          turned = true;
+          dirR = nextDirR;
+          dirC = nextDirC;
         }
       }
+      return path.length >= 3 ? path : null;
+    };
 
-      if (best) {
-        best.path.forEach(i => occupied.add(i));
-        occupied.add(circle);
-        arrows.push({ type: 'arrow', circle, path: best.path });
-      }
-    }
+    // One generation attempt with a fixed (count, minLen, maxLen, maxUse).
+    const tryAttempt = (targetCount, minLen, maxLen, maxUse) => {
+      const thermos = [];
+      const useCount = new Array(N * N).fill(0);
+      const bulbUsed = new Array(N * N).fill(false);
 
-    if (arrows.length === 0) {
-      // Fallback: single arrow from a high-value cell
-      for (const circle of order) {
-        if (solution[circle] < 3) continue;
-        const r = Math.floor(circle / N), c = circle % N;
-        const ns = [[r-1,c],[r+1,c],[r,c-1],[r,c+1]]
-          .filter(([rr,cc]) => rr>=0&&rr<N&&cc>=0&&cc<N)
-          .map(([rr,cc]) => rr*N+cc);
-        // Pick 2 cells that sum to the circle value
-        for (let i = 0; i < ns.length && arrows.length === 0; i++) {
-          for (let j = i+1; j < ns.length; j++) {
-            if (solution[ns[i]] + solution[ns[j]] === solution[circle]) {
-              arrows.push({ type: 'arrow', circle, path: [ns[i], ns[j]] });
+      for (let t = 0; t < targetCount; t++) {
+        // Bulb candidates: low solution value (≤3), not already a bulb,
+        // and useCount under the cap.
+        const avail = [...Array(N * N).keys()]
+          .filter(i => useCount[i] < maxUse && !bulbUsed[i] && solution[i] <= 3);
+        if (avail.length === 0) break;
+
+        // Try a handful of seeds, preferring boxes that haven't been
+        // used much yet (encourages box-spanning variety).
+        let bestStart = null, bestPath = null;
+        const targetLen = minLen + Math.floor(Math.random() * (maxLen - minLen + 1));
+        for (let s = 0; s < 10; s++) {
+          const cand = avail[Math.floor(Math.random() * avail.length)];
+          const candBox = boxOf(cand);
+          const candBoxUse = thermos.reduce((n, th) =>
+            n + (th.cells.some(c => boxOf(c) === candBox) ? 1 : 0), 0);
+          if (bestPath) {
+            const bestBox = boxOf(bestPath[0]);
+            const bestBoxUse = thermos.reduce((n, th) =>
+              n + (th.cells.some(c => boxOf(c) === bestBox) ? 1 : 0), 0);
+            if (candBoxUse >= bestBoxUse) continue; // not better — skip
+          }
+          // Try a few length targets — sometimes the long target fails
+          // but a shorter thermo still fits.
+          const lenTries = [targetLen, targetLen - 1, minLen, Math.max(3, minLen)];
+          for (const tl of lenTries) {
+            if (tl < 3) continue;
+            const candidatePath = tryGrowThermo(cand, useCount, maxUse, tl);
+            if (candidatePath) {
+              bestStart = cand;
+              bestPath = candidatePath;
               break;
             }
           }
         }
-        if (arrows.length > 0) break;
+
+        if (bestPath) {
+          bulbUsed[bestStart] = true;
+          for (const c of bestPath) useCount[c]++;
+          thermos.push({ type: 'thermo', cells: bestPath });
+        }
+        // If we couldn't place at all for this slot, just stop —
+        // graceful count reduction.
       }
+      return thermos;
+    };
+
+    // Difficulty-adaptive reduction ladder: try the full target first,
+    // then progressively back off count and length until something lands.
+    const targetCount = profile.count;
+    const minLen = Math.max(3, profile.minLen);
+    const maxLen = Math.min(7, profile.maxLen);
+    const maxUse = allowOverlap ? 2 : 1;
+    let thermos = [];
+
+    const reductions = [
+      { count: targetCount,     minLen: minLen, maxLen: maxLen },
+      { count: targetCount,     minLen: minLen, maxLen: Math.max(minLen, maxLen - 1) },
+      { count: targetCount - 1, minLen: minLen, maxLen: maxLen },
+      { count: targetCount - 1, minLen: minLen, maxLen: Math.max(minLen, maxLen - 1) },
+      { count: Math.max(2, targetCount - 2), minLen: 3, maxLen: Math.max(4, minLen) },
+      { count: 2,               minLen: 3, maxLen: 4 }
+    ];
+
+    for (const cfg of reductions) {
+      if (cfg.count < 2) continue;
+      for (let attempt = 0; attempt < 6; attempt++) {
+        thermos = tryAttempt(cfg.count, cfg.minLen, cfg.maxLen, maxUse);
+        if (thermos.length === 0) continue;
+
+        // Soft box-span check (same as legacy generator): at least half
+        // the thermos must hit minBoxSpan, none may exceed maxBoxSpan+2.
+        const tooWide = thermos.some(th => {
+          const boxes = new Set(th.cells.map(boxOf));
+          return boxes.size > maxBoxSpan + 2;
+        });
+        if (tooWide) continue;
+        const enoughSpan = thermos.filter(th => {
+          const boxes = new Set(th.cells.map(boxOf));
+          return boxes.size >= minBoxSpan;
+        }).length;
+        const spanOk = enoughSpan >= Math.ceil(thermos.length / 2);
+        if (!spanOk) continue;
+        break;
+      }
+      if (thermos.length > 0) break;
+    }
+
+    if (thermos.length === 0) {
+      // Final fallback: 2-cell thermo (rare — only after every reduction
+      // fails). Still respects bulb exclusivity.
+      const useCount = new Array(N * N).fill(0);
+      const bulbUsed = new Array(N * N).fill(false);
+      for (let i = 0; i < N * N && thermos.length === 0; i++) {
+        if (bulbUsed[i] || solution[i] > 3) continue;
+        const first = pickNext(solution[i], orthoNeighbors(i), useCount, 2);
+        if (first < 0) continue;
+        thermos.push({ type: 'thermo', cells: [i, first] });
+      }
+      return { constraints: thermos, regionMap: null };
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  VALIDATION PASS — bulb exclusivity + shape + strictly-increasing.
+    //  (Strict cell isolation is NO LONGER enforced — thermos may share
+    //  non-bulb cells. Visual separation is handled by renderThermoSVG.)
+    // ═══════════════════════════════════════════════════════════════════
+    this._validateThermoBulbExclusivity(thermos, N, solution);
+
+    return { constraints: thermos, regionMap: null };
+  },
+
+  /** Validate that:
+   *    • No two thermos share cells[0] (bulb exclusivity — required so
+   *      the renderer can always visually distinguish thermos).
+   *    • Each thermo is strictly straight or L-shaped (≤ 1 turn).
+   *    • Each thermo is strictly increasing along its path.
+   *  Logs a console.warn on any violation. Cell SHARING on non-bulb
+   *  cells is allowed and not flagged. */
+  _validateThermoBulbExclusivity(thermos, N, solution) {
+    if (!thermos || thermos.length === 0) return;
+
+    // Bulb exclusivity
+    const bulbOwner = new Map();
+    thermos.forEach((th, i) => {
+      const b = th.cells[0];
+      if (bulbOwner.has(b)) {
+        console.warn('[Thermo] VIOLATION: bulb cell', b,
+                     'shared between thermo', bulbOwner.get(b), 'and', i);
+      }
+      bulbOwner.set(b, i);
+    });
+
+    // Shape & strictly-increasing
+    let shapeViolations = 0;
+    thermos.forEach((th, i) => {
+      if (th.cells.length < 2) {
+        console.warn('[Thermo] VIOLATION: thermo', i, 'has < 2 cells');
+        return;
+      }
+      // Strictly increasing
+      if (solution) {
+        for (let k = 1; k < th.cells.length; k++) {
+          if (solution[th.cells[k]] <= solution[th.cells[k-1]]) {
+            console.warn('[Thermo] VIOLATION: thermo', i,
+                         'not strictly increasing at step', k-1, '→', k);
+            break;
+          }
+        }
+      }
+      // L-shape: ≤ 1 direction change
+      if (th.cells.length >= 3) {
+        const dirs = [];
+        for (let k = 1; k < th.cells.length; k++) {
+          const r0 = Math.floor(th.cells[k-1] / N), c0 = th.cells[k-1] % N;
+          const r1 = Math.floor(th.cells[k] / N), c1 = th.cells[k] % N;
+          dirs.push([r1 - r0, c1 - c0]);
+        }
+        let turns = 0;
+        for (let k = 1; k < dirs.length; k++) {
+          if (dirs[k][0] !== dirs[k-1][0] || dirs[k][1] !== dirs[k-1][1]) turns++;
+        }
+        if (turns > 1) {
+          shapeViolations++;
+          console.warn('[Thermo] VIOLATION: thermo', i, 'has', turns,
+                       'turns (L-shape allows ≤ 1)');
+        }
+      }
+    });
+
+    if (shapeViolations === 0 && bulbOwner.size === thermos.length && console.debug) {
+      console.debug('[Thermo] OK —', thermos.length,
+                    'thermos. Bulb exclusivity + L-shape + strictly-increasing verified.',
+                    'Cell sharing on non-bulb cells is allowed.');
+    }
+  },
+  /** Validate that every pair of cells belonging to DIFFERENT thermos
+   *  satisfies Manhattan ≥ 2 AND Chebyshev ≥ 2. Logs a console.warn
+   *  on any violation. Called from generateThermometers; safe to call
+   *  from anywhere with a thermo list. */
+  _validateThermoIsolation(thermos, N) {
+    if (!thermos || thermos.length < 2) return;
+    const cellOwner = new Map(); // cellIdx → thermo index
+    thermos.forEach((th, ti) => {
+      for (const c of th.cells) {
+        // If a cell is double-owned, that's an immediate violation.
+        if (cellOwner.has(c) && cellOwner.get(c) !== ti) {
+          console.warn('[Thermo Isolation] VIOLATION: cell', c,
+                       'shared between thermo', cellOwner.get(c), 'and', ti);
+        }
+        cellOwner.set(c, ti);
+      }
+    });
+    // For every thermo cell, scan its 8 neighbours — any neighbour that
+    // belongs to a DIFFERENT thermo is a strict-isolation violation.
+    // (Chebyshev ≤ 1 ⟺ neighbour, and Manhattan ≤ 2 within that
+    // neighbourhood, so this single 8-neighbour check covers both
+    // the Manhattan-2 and Chebyshev-2 invariants for adjacent cells.)
+    let violations = 0;
+    for (const [cell, ownerIdx] of cellOwner) {
+      const r = Math.floor(cell / N), c = cell % N;
+      for (let dr = -1; dr <= 1; dr++) {
+        for (let dc = -1; dc <= 1; dc++) {
+          if (dr === 0 && dc === 0) continue;
+          const rr = r + dr, cc = c + dc;
+          if (rr < 0 || rr >= N || cc < 0 || cc >= N) continue;
+          const ni = rr * N + cc;
+          if (cellOwner.has(ni) && cellOwner.get(ni) !== ownerIdx) {
+            console.warn('[Thermo Isolation] VIOLATION: cell', cell,
+                         '(thermo', ownerIdx + ') is adjacent to cell', ni,
+                         '(thermo', cellOwner.get(ni) + '). Manhattan ≤ 2 / Chebyshev ≤ 1.');
+            violations++;
+          }
+        }
+      }
+    }
+    if (violations === 0 && console.debug) {
+      console.debug('[Thermo Isolation] OK —', thermos.length,
+                    'thermos, all pairs satisfy Manhattan ≥ 2 and Chebyshev ≥ 2.');
+    }
+  },
+
+  /** Generate arrow data from a temp solution: picks paths whose values
+   *  sum to the circle's value. Difficulty-aware and shape-aware: each
+   *  level uses a profile from SZ.ConstraintProfiles.arrow to control
+   *  arrow count, path length, diagonal moves, shape variety, circle-sum
+   *  bias, and box-span — so harder levels actually require deeper
+   *  arrow-based deductions, not just fewer givens.
+   *
+   *  Design rules (per Arrow-Sudoku variant spec):
+   *    • Arrow starts from a single-cell circle (bulb).
+   *    • Circle value = sum of values along the connected arrow path.
+   *    • Paths NEVER share cells with other arrows (circles or paths).
+   *    • Paths NEVER cross other arrow segments geometrically. This is
+   *      enforced with a proper segment-intersection test, so two
+   *      diagonals can't form an X through a 2×2 square.
+   *    • Paths use King's-move adjacency (8-neighbor) at medium+ so
+   *      diagonal moves produce sharp 45° angles. Beginner/easy use
+   *      orthogonal-only moves for clean straight + L silhouettes.
+   *    • Each arrow's silhouette is sampled from the difficulty's
+   *      `shapeMix` pool and grown via a shape-biased DFS — this is
+   *      what produces the visual variety (straight / L / zig-zag /
+   *      sharp angled / long winding) instead of repetitive L-shapes.
+   *
+   *  @param {number[]} solution - full solved board
+   *  @param {object}   state    - game state (size, boxW, boxH, ...)
+   *  @param {string}   difficulty - one of SZ.Difficulties keys (default 'medium')
+   */
+  generateArrows(solution, state, difficulty = 'medium') {
+    const N = state.size;
+    if (N !== 9) { return { constraints: [], regionMap: null }; }
+
+    const profile = SZ.ConstraintProfiles.arrow[difficulty] ||
+                    SZ.ConstraintProfiles.arrow.medium;
+    const targetCount = profile.count;
+    const minLen      = profile.minLen;
+    const maxLen      = profile.maxLen;
+    const allowDiag   = profile.allowDiag;
+    const shapeMix    = profile.shapeMix;
+    const lowSumBias  = profile.lowSumBias;
+    const minBoxSpan  = profile.minBoxSpan;
+    const maxBoxSpan  = profile.maxBoxSpan;
+
+    const bw = state.boxW, bh = state.boxH;
+    const boxOf = (idx) => {
+      const r = Math.floor(idx / N), c = idx % N;
+      return Math.floor(r / bh) * (N / bw) + Math.floor(c / bw);
+    };
+
+    // ── Path geometry helpers ─────────────────────────────────────────
+    const ORTHO = [[-1,0],[0,1],[1,0],[0,-1]];
+    const DIAG  = [[-1,1],[1,1],[1,-1],[-1,-1]];
+    const MOVES = allowDiag ? [...ORTHO, ...DIAG] : ORTHO;
+
+    const cellRC = (idx) => [Math.floor(idx / N), idx % N];
+    const rcIdx  = (r, c) => r * N + c;
+    const inBounds = (r, c) => r >= 0 && r < N && c >= 0 && c < N;
+
+    // ── Segment crossing check ────────────────────────────────────────
+    // Two segments "properly" cross if they intersect at a point that's
+    // NOT a shared endpoint. This is what catches two diagonals forming
+    // an X through a 2×2 square (the only geometric crossing that's
+    // actually possible between adjacent-cell segments on a sudoku grid).
+    // We store segments as [x1,y1,x2,y2] in SVG pixel coordinates so the
+    // same test works regardless of cell size.
+    const ccw = (ax, ay, bx, by, cx, cy) =>
+      (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+
+    const onSeg = (ax, ay, bx, by, px, py) =>
+      Math.min(ax, bx) <= px && px <= Math.max(ax, bx) &&
+      Math.min(ay, by) <= py && py <= Math.max(ay, by);
+
+    const segCross = (s1, s2) => {
+      const [x1, y1, x2, y2] = s1;
+      const [x3, y3, x4, y4] = s2;
+      // Shared endpoint → not a crossing (segments meet at a cell center)
+      if ((x1===x3 && y1===y3) || (x1===x4 && y1===y4) ||
+          (x2===x3 && y2===y3) || (x2===x4 && y2===y4)) return false;
+      const d1 = ccw(x1, y1, x2, y2, x3, y3);
+      const d2 = ccw(x1, y1, x2, y2, x4, y4);
+      const d3 = ccw(x3, y3, x4, y4, x1, y1);
+      const d4 = ccw(x3, y3, x4, y4, x2, y2);
+      if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+          ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) return true;
+      // Collinear overlap (rare on a sudoku grid, but cover it anyway)
+      if (d1 === 0 && onSeg(x1, y1, x2, y2, x3, y3)) return true;
+      if (d2 === 0 && onSeg(x1, y1, x2, y2, x4, y4)) return true;
+      if (d3 === 0 && onSeg(x3, y3, x4, y4, x1, y1)) return true;
+      if (d4 === 0 && onSeg(x3, y3, x4, y4, x2, y2)) return true;
+      return false;
+    };
+
+    // Convert a pair of cell indices to a segment in SVG coords.
+    // (We use column,row as x,y so segments line up with how renderArrowSVG
+    //  places them. The crossing test is invariant to axis choice anyway.)
+    const segFromCells = (a, b) => {
+      const [ar, ac] = cellRC(a), [br, bc] = cellRC(b);
+      return [ac, ar, bc, br];
+    };
+
+    // ── Shape-biased move ordering ────────────────────────────────────
+    // For each shape category, order moves so the DFS prefers the kind
+    // of motion that produces that silhouette. Within each preference
+    // bucket, moves are shuffled for variety so two arrows with the same
+    // shape category don't look identical.
+    const shuffle = (arr) => {
+      const a = arr.slice();
+      for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    };
+
+    const isSameDir  = (a, b) => a[0] === b[0] && a[1] === b[1];
+    const isOppDir   = (a, b) => a[0] === -b[0] && a[1] === -b[1];
+    const isDiagMove = (m)   => m[0] !== 0 && m[1] !== 0;
+    // Orthogonal turn = 90° change from last direction (not same, not opp)
+    const isOrthoTurn = (a, b) =>
+      (a[0]*b[0] + a[1]*b[1] === 0) && !isSameDir(a, b) && !isOppDir(a, b);
+
+    const orderedMoves = (shape, lastDir) => {
+      if (!lastDir) return shuffle(MOVES);
+      const same = [], orthoTurn = [], diagTurn = [], opp = [];
+      for (const m of MOVES) {
+        if (isSameDir(m, lastDir)) same.push(m);
+        else if (isOppDir(m, lastDir)) opp.push(m);
+        else if (isOrthoTurn(m, lastDir)) orthoTurn.push(m);
+        else diagTurn.push(m); // 45° turn (only possible when allowDiag)
+      }
+      let buckets;
+      switch (shape) {
+        case 'straight':     buckets = [same, orthoTurn, diagTurn, opp]; break;
+        case 'L':            buckets = [orthoTurn, same, diagTurn, opp]; break;
+        case 'zigzag1':
+        case 'zigzag2':      buckets = [orthoTurn, diagTurn, same, opp]; break;
+        case 'sharp':        buckets = [diagTurn, orthoTurn, same, opp]; break;
+        case 'winding':
+        case 'long_winding': buckets = [diagTurn, orthoTurn, same, opp]; break;
+        default:             buckets = [same, orthoTurn, diagTurn, opp];
+      }
+      return buckets.flatMap(b => shuffle(b));
+    };
+
+    // ── Shape match check (soft filter for the strict pass) ───────────
+    // Returns the silhouette characteristics of a completed arrow (circle
+    // + path) so the DFS can decide whether it actually matches the
+    // requested shape. IMPORTANT: the analysis includes the circle→path[0]
+    // segment — an arrow's silhouette begins at the circle, not at the
+    // first path cell, so a 2-cell arrow with one 90° turn between the
+    // circle→p0 and p0→p1 segments is an 'L', not a 'straight'.
+    const pathShape = (circle, path) => {
+      if (path.length < 1) return { changes: 0, hasDiag: false, hasSharpTurn: false, length: 0 };
+      // Build the full cell sequence: circle, then path cells.
+      const allCells = [circle, ...path];
+      const dirs = [];
+      for (let i = 1; i < allCells.length; i++) {
+        const [pr, pc] = cellRC(allCells[i-1]);
+        const [cr, cc] = cellRC(allCells[i]);
+        dirs.push([cr - pr, cc - pc]);
+      }
+      let changes = 0, hasDiag = false, hasSharpTurn = false;
+      for (let i = 1; i < dirs.length; i++) {
+        const prev = dirs[i-1], cur = dirs[i];
+        if (!isSameDir(prev, cur)) {
+          changes++;
+          if (isDiagMove(cur)) hasDiag = true;
+          // Sharp turn = transition between orthogonal and diagonal move
+          if (isDiagMove(prev) !== isDiagMove(cur)) hasSharpTurn = true;
+        }
+      }
+      return { changes, hasDiag, hasSharpTurn, length: path.length };
+    };
+
+    const matchesShape = (circle, path, shape) => {
+      const s = pathShape(circle, path);
+      if (s.length < 2) return false;
+      switch (shape) {
+        case 'straight':     return s.changes === 0;
+        case 'L':            return s.changes === 1;
+        case 'zigzag1':      return s.changes >= 2 && s.changes <= 3;
+        case 'zigzag2':      return s.changes >= 3;
+        case 'sharp':        return (s.hasDiag || s.hasSharpTurn) && s.changes >= 1;
+        case 'winding':      return s.changes >= 2 && s.length >= 4;
+        case 'long_winding': return s.changes >= 3 && s.length >= 5;
+        default:             return true;
+      }
+    };
+
+    // ── DFS path finder ───────────────────────────────────────────────
+    // Grows a path from the circle's neighbor outward, looking for a
+    // path whose values sum to `circVal`. Returns the path (array of
+    // cell indices, NOT including the circle) or null.
+    //
+    // Three passes (each only runs if the previous failed):
+    //   Pass 0 (strict): path matches the requested `shape` AND
+    //     length >= minLen. This is what gives each arrow its intended
+    //     visual identity (straight / L / zig-zag / sharp / winding / …)
+    //     AND hits the difficulty's target path length.
+    //   Pass 1 (any shape, min length): length >= minLen. Used when the
+    //     requested shape isn't achievable for this circle on this
+    //     solution — keeps the path long enough to satisfy the
+    //     difficulty profile even if the silhouette is generic.
+    //   Pass 2 (last resort): any valid path with length >= 2. Only hit
+    //     on pathological solutions where even minLen-length paths are
+    //     impossible for this circle.
+    //
+    // The `maxPass` parameter caps which passes run — the caller uses
+    // maxPass=1 to try a shape with strict matching only, then falls
+    // back to maxPass=3 (full relaxed chain) only if no shape matched.
+    // This is what gives each circle maximum chance to land a non-
+    // trivial silhouette (try every shape strictly first, accept a
+    // generic shape only as a last resort).
+    //
+    // The DFS tries shape-biased moves first, so even pass 1 fallbacks
+    // tend to be close to the target shape.
+    const findPath = (circle, circVal, shape, existingSegs, usedCells, maxPass = 3) => {
+      const [cr, cc] = cellRC(circle);
+      const NODE_BUDGET = 8000;
+
+      for (let pass = 0; pass < maxPass; pass++) {
+        let nodes = 0;
+        const visited = new Set([circle]);
+
+        const dfs = (idx, path, sum, lastDir, pathSegs) => {
+          nodes++;
+          if (nodes > NODE_BUDGET) return null;
+
+          // Accept if sum matches AND length is valid for this pass.
+          if (sum === circVal && path.length >= 2) {
+            const lenOk = (pass === 2) || (path.length >= minLen);
+            const shapeOk = (pass !== 0) || matchesShape(circle, path, shape);
+            if (lenOk && shapeOk) {
+              return path.slice();
+            }
+            // Sum is at target but we don't meet this pass's criteria.
+            // Can't extend further (would overshoot the sum), so stop
+            // this branch — other branches may still succeed.
+            return null;
+          }
+          if (path.length >= maxLen) return null;
+          if (sum >= circVal) return null;
+
+          const [r, c] = cellRC(idx);
+          const candidates = orderedMoves(shape, lastDir);
+          for (const [dr, dc] of candidates) {
+            const nr = r + dr, nc = c + dc;
+            if (!inBounds(nr, nc)) continue;
+            const nIdx = rcIdx(nr, nc);
+            if (visited.has(nIdx)) continue;
+            if (usedCells.has(nIdx)) continue;
+            const newVal = solution[nIdx];
+            if (sum + newVal > circVal) continue;
+
+            // Segment must not cross any existing arrow's segments
+            // or any segment already in this path.
+            const newSeg = segFromCells(idx, nIdx);
+            let crosses = false;
+            for (const es of existingSegs) {
+              if (segCross(newSeg, es)) { crosses = true; break; }
+            }
+            if (!crosses) {
+              for (const ps of pathSegs) {
+                if (segCross(newSeg, ps)) { crosses = true; break; }
+              }
+            }
+            if (crosses) continue;
+
+            visited.add(nIdx);
+            pathSegs.push(newSeg);
+            path.push(nIdx);
+            const result = dfs(nIdx, path, sum + newVal, [dr, dc], pathSegs);
+            if (result) return result;
+            path.pop();
+            pathSegs.pop();
+            visited.delete(nIdx);
+          }
+          return null;
+        };
+
+        // Try each starting direction from the circle.
+        const startMoves = orderedMoves(shape, null);
+        for (const [dr, dc] of startMoves) {
+          const nr = cr + dr, nc = cc + dc;
+          if (!inBounds(nr, nc)) continue;
+          const nIdx = rcIdx(nr, nc);
+          if (usedCells.has(nIdx)) continue;
+          const newVal = solution[nIdx];
+          if (newVal > circVal) continue;
+
+          // Circle→nIdx segment must not cross any existing arrow.
+          // (Can't cross our own path yet — path is empty.)
+          const newSeg = segFromCells(circle, nIdx);
+          let crosses = false;
+          for (const es of existingSegs) {
+            if (segCross(newSeg, es)) { crosses = true; break; }
+          }
+          if (crosses) continue;
+
+          visited.add(nIdx);
+          const result = dfs(nIdx, [nIdx], newVal, [dr, dc], [newSeg]);
+          if (result) return result;
+          visited.delete(nIdx);
+        }
+      }
+      return null;
+    };
+
+    // ── Circle-candidate ordering ─────────────────────────────────────
+    // (Built per-attempt inside the loop below so each retry gets a
+    // fresh mix of low and high circle values.)
+    const allCells = [...Array(N * N).keys()];
+    const highFirst = allCells.slice().sort((a, b) => solution[b] - solution[a]);
+
+    // ── Main generation loop ──────────────────────────────────────────
+    // Try several full attempts — at higher levels it can take a few
+    // tries to land arrows that meet the box-span target.
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const arrows = [];
+      const usedCells = new Set(); // circles AND path cells (exclusive)
+      const allSegs = [];          // every segment from every placed arrow
+
+      // Build a fresh per-attempt circle-candidate ordering where each
+      // cell gets a priority score: with probability `lowSumBias`,
+      // low-value cells (3–7) are prioritized (strong sum constraints —
+      // sum=3 forces {1,2}, sum=4 forces {1,3}…); otherwise high-value
+      // cells (8–9) are prioritized (more sum-budget for longer paths
+      // at higher difficulty).
+      //
+      // Doing this PER-CELL (rather than per-attempt all-or-nothing) is
+      // what produces a mix of low and high circle values within a
+      // single puzzle — so the player sees both tight-constraint arrows
+      // (sum=3 → {1,2}) and long-path arrows (sum=9 → 4+ cell winding
+      // paths), which is the whole point of the difficulty-scaled
+      // variant identity.
+      const order = allCells
+        .filter(i => solution[i] >= 3)
+        .map(i => {
+          const useLow = Math.random() < lowSumBias;
+          // Low-biased: lower value → higher priority (10−v gives 7..3 for v=3..7)
+          // High-biased: higher value → higher priority (v gives 8..9 for v=8..9)
+          const priority = useLow
+            ? (10 - solution[i]) + Math.random()
+            : solution[i] + Math.random();
+          return { i, priority };
+        })
+        .sort((a, b) => b.priority - a.priority)
+        .map(x => x.i);
+
+      // Build a shuffled shape set per attempt so each circle's
+      // strict-match phase tries shapes in a different order. (Phase 1
+      // of the per-circle search below iterates through this shuffled
+      // list with strict matching; the first shape that fits wins.)
+      const shapeSet = shuffle(shapeMix.slice());
+
+      for (const circle of order) {
+        if (arrows.length >= targetCount) break;
+        if (usedCells.has(circle)) continue;
+        const circVal = solution[circle];
+        if (circVal < 3) continue; // need ≥2 path cells, min sum = 1+2 = 3
+
+        // Two-phase shape search:
+        //   Phase 1: try EVERY shape in shapeMix with strict matching
+        //     (maxPass=1 — only pass 0, which requires the path to
+        //     match the requested silhouette AND hit minLen). This
+        //     gives the circle maximum chance to land a non-trivial
+        //     silhouette.
+        //   Phase 2: if no shape matched strictly, fall back to the
+        //     full 3-pass findPath (any shape with minLen → any shape
+        //     with length >= 2). Uses a random shape from shapeMix for
+        //     the move bias so the result still tends toward the
+        //     difficulty's silhouette profile.
+        let found = null;
+        const shapesToTry = shapeSet;  // already shuffled per-attempt
+        for (const shape of shapesToTry) {
+          found = findPath(circle, circVal, shape, allSegs, usedCells, 1);
+          if (found) break;
+        }
+        if (!found) {
+          // Phase 2: relaxed fallback. The shape is just for move biasing.
+          const biasShape = shapesToTry[0];
+          found = findPath(circle, circVal, biasShape, allSegs, usedCells, 3);
+        }
+        if (found && found.length >= 1) {
+          // Mark all cells as used (circle + path) so no other arrow
+          // can touch them.
+          usedCells.add(circle);
+          found.forEach(i => usedCells.add(i));
+          // Record segments for future crossing checks.
+          let prev = circle;
+          for (const idx of found) {
+            allSegs.push(segFromCells(prev, idx));
+            prev = idx;
+          }
+          arrows.push({ type: 'arrow', circle, path: found });
+        }
+      }
+
+      if (arrows.length === 0) continue;
+
+      // Verify the box-span target. Same "soft" check as thermo: at
+      // least half the arrows must hit minBoxSpan, and none may exceed
+      // maxBoxSpan+2.
+      const tooWide = arrows.some(ar => {
+        const boxes = new Set([ar.circle, ...ar.path].map(boxOf));
+        return boxes.size > maxBoxSpan + 2;
+      });
+      if (tooWide && attempt < 5) continue;
+      const enoughSpan = arrows.filter(ar => {
+        const boxes = new Set([ar.circle, ...ar.path].map(boxOf));
+        return boxes.size >= minBoxSpan;
+      }).length;
+      const spanOk = enoughSpan >= Math.ceil(arrows.length / 2);
+      if (!spanOk && attempt < 5) continue;
+
+      return { constraints: arrows, regionMap: null };
+    }
+
+    // Fallback: single 2-cell orthogonal arrow from a high-value cell.
+    // Rare — only hit if all full attempts failed (extremely unlikely
+    // on a 9×9 solution with reasonable profile settings).
+    const arrows = [];
+    const usedCells = new Set();
+    for (const circle of highFirst) {
+      if (solution[circle] < 3) continue;
+      if (usedCells.has(circle)) continue;
+      const [r, c] = cellRC(circle);
+      const ns = [[r-1,c],[r+1,c],[r,c-1],[r,c+1]]
+        .filter(([rr,cc]) => inBounds(rr, cc))
+        .map(([rr,cc]) => rcIdx(rr, cc))
+        .filter(i => !usedCells.has(i));
+      for (let i = 0; i < ns.length && arrows.length === 0; i++) {
+        for (let j = i+1; j < ns.length; j++) {
+          if (solution[ns[i]] + solution[ns[j]] === solution[circle]) {
+            arrows.push({ type: 'arrow', circle, path: [ns[i], ns[j]] });
+            usedCells.add(circle);
+            usedCells.add(ns[i]);
+            usedCells.add(ns[j]);
+            break;
+          }
+        }
+      }
+      if (arrows.length > 0) break;
     }
     return { constraints: arrows, regionMap: null };
   },
 
-  /** Colors for rendering constraints. */
-  _cageColors: [
-    '#e74c3c','#3498db','#2ecc71','#f39c12','#9b59b6',
-    '#1abc9c','#e67e22','#34495e','#16a085','#c0392b',
-    '#2980b9','#27ae60','#d35400','#8e44ad','#2c3e50',
-    '#7f8c8d','#f1c40f','#e91e63','#00bcd4','#ff5722',
-    '#795548','#607d8b','#009688','#ff9800','#673ab7'
-  ],
+  /** Colors for rendering constraints.
+   *  Generated (not hand-picked) so hues are evenly spaced around the wheel —
+   *  guarantees adjacent cages never land on visually-similar colors, which
+   *  the old hand-picked list occasionally did (e.g. two close teals).
+   *  Lightness/saturation chosen to stay legible against both light-paper
+   *  and dark-paper themes without per-theme color logic. */
+  _cageColors: (() => {
+    const count = 14;
+    const saturation = 72, lightness = 48;
+    const colors = [];
+    for (let i = 0; i < count; i++) {
+      const hue = Math.round((360 / count) * i);
+      colors.push(`hsl(${hue}, ${saturation}%, ${lightness}%)`);
+    }
+    return colors;
+  })(),
 
   getCageColor(i) { return this._cageColors[i % this._cageColors.length]; },
+
+  /** Assign each cage a color such that no two cages sharing a border get
+   *  the same one. Plain index%palette.length can't guarantee that once a
+   *  puzzle has more cages than palette colors, or when two same-color
+   *  cages just happen to land next to each other — this greedy graph
+   *  coloring keeps every touching pair of cage edges visually distinct. */
+  getCageColorMap(cages, N) {
+    const cellToCage = new Array(N * N).fill(-1);
+    cages.forEach((c, ci) => c.cells.forEach(idx => cellToCage[idx] = ci));
+
+    const adj = cages.map(() => new Set());
+    for (let r = 0; r < N; r++) {
+      for (let c = 0; c < N; c++) {
+        const idx = r * N + c, ci = cellToCage[idx];
+        if (ci < 0) continue;
+        if (c < N - 1) {
+          const rightCi = cellToCage[idx + 1];
+          if (rightCi >= 0 && rightCi !== ci) { adj[ci].add(rightCi); adj[rightCi].add(ci); }
+        }
+        if (r < N - 1) {
+          const downCi = cellToCage[idx + N];
+          if (downCi >= 0 && downCi !== ci) { adj[ci].add(downCi); adj[downCi].add(ci); }
+        }
+      }
+    }
+
+    const colors = new Array(cages.length).fill(null);
+    cages.forEach((c, ci) => {
+      const used = new Set([...adj[ci]].map(nb => colors[nb]).filter(Boolean));
+      let chosen = this._cageColors.find(col => !used.has(col));
+      if (!chosen) chosen = this._cageColors[ci % this._cageColors.length]; // palette exhausted — rare, falls back
+      colors[ci] = chosen;
+    });
+    return colors;
+  },
 
   /** Render helper: compute cage adjacency for border drawing. */
   getCageBorders(cages, N) {
@@ -3201,6 +4957,85 @@ SZ.Engine = {
     return this._generateSeeded(seed, size, variant, difficulty);
   },
 
+  /**
+   * Generate a variant puzzle (thermo or arrow) AND verify the variant is
+   * actually doing useful work — i.e., the puzzle has multiple solutions
+   * when the variant constraints are ignored.
+   *
+   * This is what gives each variant its "identity": at medium difficulty and
+   * above, the player CANNOT solve the puzzle with sudoku logic alone — they
+   * MUST use the variant constraints. Without this check, a generated thermo
+   * puzzle could happen to be solvable as a plain sudoku (the thermos just
+   * decorate the board), which defeats the whole point of having a variant.
+   *
+   * Strategy:
+   *   1. Generate fresh variant constraints using the difficulty profile.
+   *   2. Build the puzzle (remove cells while preserving uniqueness WITH
+   *      variant constraints — this is what makePuzzle does).
+   *   3. Count solutions WITHOUT variant constraints. If count > 1, the
+   *      variant is necessary → accept. Otherwise retry with new constraints.
+   *   4. Fall back to the first attempt if no variant-required puzzle is
+   *      found within the attempt budget.
+   *
+   * Skip verification at beginner/easy — at those levels we WANT the puzzle
+   * to be approachable with mostly sudoku logic + a few variant deductions.
+   *
+   * @param {string} constraintType - 'thermo' or 'arrow'
+   * @param {number[]} solution - full solved board
+   * @param {object} state - game state (must include _peers)
+   * @param {string} difficulty - difficulty key
+   * @param {number} maxAttempts - retry budget (default 6)
+   * @returns {object|null} { puzzle, constraints }
+   */
+  generateVariantPuzzleWithIdentity(constraintType, solution, state, difficulty, maxAttempts = 6) {
+    const skipVerify = (difficulty === 'beginner' || difficulty === 'easy');
+
+    let bestResult = null;
+    // Wall-clock budget — protects the main thread on slow devices.
+    const deadline = (typeof performance !== 'undefined' ? performance.now() : Date.now()) + 5000;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+      if (now > deadline && bestResult) break;
+
+      // Generate fresh constraints for this attempt.
+      let constraints;
+      if (constraintType === 'thermo') {
+        constraints = SZ.Constraints.generateThermometers(solution, state, difficulty).constraints;
+      } else if (constraintType === 'arrow') {
+        constraints = SZ.Constraints.generateArrows(solution, state, difficulty).constraints;
+      } else {
+        return null;
+      }
+      if (!constraints || constraints.length === 0) continue;
+
+      // Build a state with these constraints.
+      // NOTE: thermo and arrow constraints do NOT modify the peer map
+      // (buildPeerMap only adds peers for rules + killer cages), so we can
+      // safely reuse state._peers for both the with-variant and without-variant
+      // solution counts.
+      const attemptState = { ...state, constraints, _peers: state._peers };
+      const puzzle = this.makePuzzle(solution, attemptState, difficulty);
+
+      const result = { puzzle, constraints };
+      if (bestResult === null) bestResult = result;
+
+      if (skipVerify) return result;
+
+      // Verify: count solutions WITHOUT variant constraints.
+      // If count > 1, the variant is necessary — accept this puzzle.
+      const noVariantState = { ...state, constraints: null, _peers: state._peers };
+      const cnt = this.countSolutions(puzzle, noVariantState, 2, 50000);
+      if (cnt > 1) return result;
+      // Otherwise: variant wasn't necessary — try again with new constraints.
+    }
+
+    // Fall back to first attempt (still a valid puzzle, just not strictly
+    // variant-required). This is rare — the generator usually lands a
+    // variant-required puzzle within 1-2 attempts at medium+ difficulty.
+    return bestResult;
+  },
+
   _dateToSeed(dateStr, size, variant, difficulty) {
     let h = 0;
     const s = dateStr + '|' + size + '|' + variant + '|' + difficulty;
@@ -3247,18 +5082,21 @@ SZ.Engine = {
         return { solution: tempSolution, puzzle, regionMap, constraints: cages };
       } else if (vConf.constraintType === 'thermo') {
         const tempSolution = this.generateSolution(state);
-        const { constraints: thermos } = SZ.Constraints.generateThermometers(tempSolution, state);
-        constraints = thermos;
-        state.constraints = thermos;
-        const puzzle = this.makePuzzle(tempSolution, state, difficulty);
-        return { solution: tempSolution, puzzle, regionMap, constraints: thermos };
+        // Difficulty-aware generation + variant-identity verification:
+        // ensures medium+ puzzles actually require thermo logic, not just
+        // standard sudoku deductions with a few decorative thermos.
+        const result = this.generateVariantPuzzleWithIdentity('thermo', tempSolution, state, difficulty);
+        constraints = result.constraints;
+        state.constraints = result.constraints;
+        return { solution: tempSolution, puzzle: result.puzzle, regionMap, constraints: result.constraints };
       } else if (vConf.constraintType === 'arrow') {
         const tempSolution = this.generateSolution(state);
-        const { constraints: arrows } = SZ.Constraints.generateArrows(tempSolution, state);
-        constraints = arrows;
-        state.constraints = arrows;
-        const puzzle = this.makePuzzle(tempSolution, state, difficulty);
-        return { solution: tempSolution, puzzle, regionMap, constraints: arrows };
+        // Same identity verification as thermo — arrow puzzles at medium+
+        // must require arrow-sum deductions, not be solvable as plain sudoku.
+        const result = this.generateVariantPuzzleWithIdentity('arrow', tempSolution, state, difficulty);
+        constraints = result.constraints;
+        state.constraints = result.constraints;
+        return { solution: tempSolution, puzzle: result.puzzle, regionMap, constraints: result.constraints };
       } else {
         const solution = _jigsawSolved ? _jigsawSolved.solution : this.generateSolution(state);
         const puzzle = this.makePuzzle(solution, state, difficulty);
@@ -3294,6 +5132,11 @@ SZ.GameState = class {
     this.selectedCell = null;   // [row, col] or null
     this.noteMode = false;
     this.hintsLeft = 5;
+    this.hintsUsedCount = 0;
+    this.assistUnlocked = false;  // Logic Hint / Magic Pencil unlock for assist-locked modes (Survival/Hardcore/Blind)
+    this.magicPencilUsed = false;
+    this.logicHintCount = 0;
+    this.puzzleSeed = null;       // captures the RNG seed for this puzzle so it can be re-shared identically
     this.mistakes = 0;
     this.score = 0;
     this.timerSec = 0;
@@ -3303,6 +5146,10 @@ SZ.GameState = class {
     this.comboCount = 0;
     this.history = [];
     this.historyMax = 30;
+    // Redo stack — entries popped off `history` by undo() live here until
+    // the user makes a new move (which clears the redo stack, standard UX).
+    this.redoStack = [];
+    this.redoMax = 30;
     this.challengeType = null;  // 'daily' | 'weekly' | null
     this.challengeDate = null;
     this.constraints = null;    // variant constraint data (cages/thermos/arrows)
@@ -3369,68 +5216,95 @@ SZ.GameState = class {
     this._engineStateKey = null;
     let engineState = this.getEngineState();
 
-    // Jigsaw: region map + solution are generated TOGETHER (see
-    // SZ.Engine.generateSolvableJigsaw) so a pathologically hard region
-    // shape gets discarded and retried instead of stalling the page for
-    // seconds. Skip this when we're loading an existing puzzle (daily
-    // challenge / saved game) — those already carry their own regionMap
-    // and solution, so generating one here would just be wasted work.
-    let _jigsawPregen = null;
-    if (this.variant === 'jigsaw' && !this.regionMap) {
-      if (opts.solution && opts.puzzle) {
-        this.regionMap = SZ.Engine.generateJigsawRegionMap(N);
-        engineState.regionMap = this.regionMap;
-      } else {
-        _jigsawPregen = SZ.Engine.generateSolvableJigsaw(N);
-        this.regionMap = _jigsawPregen.regionMap;
-        engineState.regionMap = this.regionMap;
-      }
-    }
-    this._peers = _jigsawPregen ? _jigsawPregen.peers : SZ.Engine.buildPeers(engineState);
-    // Sync cached engine state's _peers so subsequent callers don't rebuild
-    engineState._peers = this._peers;
-
-    if (opts.solution && opts.puzzle) {
-      this.solution = opts.solution;
-      this.puzzle = opts.puzzle;
-      this.regionMap = opts.regionMap || this.regionMap;
-      this.constraints = opts.constraints || null;
+    // Capture (or reuse, when replaying a shared link) the RNG seed for
+    // this puzzle. Wrapping generation below in this seeded random makes
+    // the whole thing fully reproducible — letting a friend load the
+    // exact same grid from a share link, or a saved game restore cleanly.
+    const generatingFresh = !(opts.solution && opts.puzzle);
+    let _restoreRandom = null;
+    if (generatingFresh) {
+      const seed = opts.seed != null ? Number(opts.seed) : Math.floor(Math.random() * 1_000_000_000);
+      this.puzzleSeed = seed;
+      _restoreRandom = Math.random;
+      Math.random = SZ.Engine._seededRandom(seed);
     } else {
-      // Generate constraints for constrained variants
-      if (vConf.constraintType === 'killer') {
-        const tempSolution = SZ.Engine.generateSolution(engineState);
-        const { constraints: cages, regionMap: cageRM } = SZ.Constraints.generateKillerCages(tempSolution, engineState);
-        this.constraints = cages;
-        this.regionMap = cageRM || this.regionMap;
-        engineState.constraints = cages;
-        // Temp solution already satisfies all constraints (rows+cols+boxes+cage sums+no duplicates)
-        this.solution = tempSolution;
-        this.puzzle = SZ.Engine.makePuzzle(this.solution, engineState, this.difficulty);
-      } else if (vConf.constraintType === 'thermo') {
-        const tempSolution = SZ.Engine.generateSolution(engineState);
-        const { constraints: thermos } = SZ.Constraints.generateThermometers(tempSolution, engineState);
-        this.constraints = thermos;
-        engineState.constraints = thermos;
-        // Temp solution already satisfies all thermo constraints (strictly increasing)
-        this.solution = tempSolution;
-        this.puzzle = SZ.Engine.makePuzzle(this.solution, engineState, this.difficulty);
-      } else if (vConf.constraintType === 'arrow') {
-        const tempSolution = SZ.Engine.generateSolution(engineState);
-        const { constraints: arrows } = SZ.Constraints.generateArrows(tempSolution, engineState);
-        this.constraints = arrows;
-        engineState.constraints = arrows;
-        // Temp solution already satisfies all arrow constraints
-        this.solution = tempSolution;
-        this.puzzle = SZ.Engine.makePuzzle(this.solution, engineState, this.difficulty);
-      } else {
-        this.solution = _jigsawPregen ? _jigsawPregen.solution : SZ.Engine.generateSolution(engineState);
-        this.puzzle = SZ.Engine.makePuzzle(this.solution, engineState, this.difficulty);
+      this.puzzleSeed = opts.seed != null ? Number(opts.seed) : null;
+    }
+
+    try {
+      // Jigsaw: region map + solution are generated TOGETHER (see
+      // SZ.Engine.generateSolvableJigsaw) so a pathologically hard region
+      // shape gets discarded and retried instead of stalling the page for
+      // seconds. Skip this when we're loading an existing puzzle (daily
+      // challenge / saved game) — those already carry their own regionMap
+      // and solution, so generating one here would just be wasted work.
+      let _jigsawPregen = null;
+      if (this.variant === 'jigsaw' && !this.regionMap) {
+        if (opts.solution && opts.puzzle) {
+          this.regionMap = SZ.Engine.generateJigsawRegionMap(N);
+          engineState.regionMap = this.regionMap;
+        } else {
+          _jigsawPregen = SZ.Engine.generateSolvableJigsaw(N);
+          this.regionMap = _jigsawPregen.regionMap;
+          engineState.regionMap = this.regionMap;
+        }
       }
+      this._peers = _jigsawPregen ? _jigsawPregen.peers : SZ.Engine.buildPeers(engineState);
+      // Sync cached engine state's _peers so subsequent callers don't rebuild
+      engineState._peers = this._peers;
+
+      if (opts.solution && opts.puzzle) {
+        this.solution = opts.solution;
+        this.puzzle = opts.puzzle;
+        this.regionMap = opts.regionMap || this.regionMap;
+        this.constraints = opts.constraints || null;
+      } else {
+        // Generate constraints for constrained variants
+        if (vConf.constraintType === 'killer') {
+          const tempSolution = SZ.Engine.generateSolution(engineState);
+          const { constraints: cages, regionMap: cageRM } = SZ.Constraints.generateKillerCages(tempSolution, engineState);
+          this.constraints = cages;
+          this.regionMap = cageRM || this.regionMap;
+          engineState.constraints = cages;
+          // Temp solution already satisfies all constraints (rows+cols+boxes+cage sums+no duplicates)
+          this.solution = tempSolution;
+          this.puzzle = SZ.Engine.makePuzzle(this.solution, engineState, this.difficulty);
+        } else if (vConf.constraintType === 'thermo') {
+          const tempSolution = SZ.Engine.generateSolution(engineState);
+          // Difficulty-aware generation + variant-identity verification:
+          // ensures medium+ puzzles actually require thermo logic.
+          const result = SZ.Engine.generateVariantPuzzleWithIdentity(
+            'thermo', tempSolution, engineState, this.difficulty);
+          this.constraints = result.constraints;
+          engineState.constraints = result.constraints;
+          this.solution = tempSolution;
+          this.puzzle = result.puzzle;
+        } else if (vConf.constraintType === 'arrow') {
+          const tempSolution = SZ.Engine.generateSolution(engineState);
+          // Same identity verification as thermo — arrow puzzles at medium+
+          // must require arrow-sum deductions.
+          const result = SZ.Engine.generateVariantPuzzleWithIdentity(
+            'arrow', tempSolution, engineState, this.difficulty);
+          this.constraints = result.constraints;
+          engineState.constraints = result.constraints;
+          this.solution = tempSolution;
+          this.puzzle = result.puzzle;
+        } else {
+          this.solution = _jigsawPregen ? _jigsawPregen.solution : SZ.Engine.generateSolution(engineState);
+          this.puzzle = SZ.Engine.makePuzzle(this.solution, engineState, this.difficulty);
+        }
+      }
+    } finally {
+      if (_restoreRandom) Math.random = _restoreRandom;
     }
 
     this.userGrid = new Array(N * N).fill(0);
     this.notes = Array.from({ length: N * N }, () => new Set());
-    this.hintsLeft = this.modeConf.hints;
+    this.hintsLeft = SZ.Assist.hintCap(this.mode, this.difficulty, this.challengeType);
+    this.hintsUsedCount = 0;
+    this.assistUnlocked = false;
+    this.magicPencilUsed = false;
+    this.logicHintCount = 0;
 
     for (let i = 0; i < N * N; i++) {
       if (this.puzzle[i] !== 0) this.givenSet.add(i);
@@ -3438,7 +5312,9 @@ SZ.GameState = class {
     this.filledCount = this.givenSet.size;
   }
 
-  /** Save history snapshot before a move. */
+  /** Save history snapshot before a move.
+   *  Clearing the redo stack here is standard UX: once the user makes a
+   *  new move, any previously-undone actions are no longer redoable. */
   saveHistory(idx) {
     const entry = {
       idx,
@@ -3447,21 +5323,72 @@ SZ.GameState = class {
       prevMistakes: this.mistakes,
       prevScore: this.score,
       prevCombo: this.comboCount,
-      prevHints: this.hintsLeft
+      prevHints: this.hintsLeft,
+      prevHintsUsed: this.hintsUsedCount
     };
     this.history.push(entry);
     if (this.history.length > this.historyMax) this.history.shift();
+    // New user action invalidates the redo chain.
+    this.redoStack = [];
   }
 
   undo() {
     if (!this.modeConf.undo || this.gameOver || this.paused || this.history.length === 0) return false;
     const entry = this.history.pop();
+    // Capture the CURRENT (post-move) state so redo() can restore it.
+    const redoEntry = {
+      idx: entry.idx,
+      nextVal: this.userGrid[entry.idx],
+      nextNotes: new Set(this.notes[entry.idx]),
+      nextMistakes: this.mistakes,
+      nextScore: this.score,
+      nextCombo: this.comboCount,
+      nextHints: this.hintsLeft,
+      nextHintsUsed: this.hintsUsedCount
+    };
+    this.redoStack.push(redoEntry);
+    if (this.redoStack.length > this.redoMax) this.redoStack.shift();
+
+    // Restore pre-move state.
     this.userGrid[entry.idx] = entry.prevVal;
     this.notes[entry.idx] = new Set(entry.prevNotes);
     this.mistakes = entry.prevMistakes;
     this.score = entry.prevScore;
     this.comboCount = entry.prevCombo;
     this.hintsLeft = entry.prevHints;
+    this.hintsUsedCount = entry.prevHintsUsed ?? this.hintsUsedCount;
+    this._updateFilled();
+    return true;
+  }
+
+  /** Redo a previously-undone move. Restores the post-move state that
+   *  undo() captured. Returns false if there's nothing to redo. */
+  redo() {
+    if (!this.modeConf.undo || this.gameOver || this.paused || this.redoStack.length === 0) return false;
+    const entry = this.redoStack.pop();
+    // Push the pre-redo state back onto history so a subsequent undo()
+    // returns to the same pre-move state as the original undo did.
+    const histEntry = {
+      idx: entry.idx,
+      prevVal: this.userGrid[entry.idx],
+      prevNotes: new Set(this.notes[entry.idx]),
+      prevMistakes: this.mistakes,
+      prevScore: this.score,
+      prevCombo: this.comboCount,
+      prevHints: this.hintsLeft,
+      prevHintsUsed: this.hintsUsedCount
+    };
+    this.history.push(histEntry);
+    if (this.history.length > this.historyMax) this.history.shift();
+
+    // Restore post-move state.
+    this.userGrid[entry.idx] = entry.nextVal;
+    this.notes[entry.idx] = new Set(entry.nextNotes);
+    this.mistakes = entry.nextMistakes;
+    this.score = entry.nextScore;
+    this.comboCount = entry.nextCombo;
+    this.hintsLeft = entry.nextHints;
+    this.hintsUsedCount = entry.nextHintsUsed ?? this.hintsUsedCount;
     this._updateFilled();
     return true;
   }
@@ -3522,7 +5449,8 @@ SZ.GameState = class {
   }
 
   useHint(idx) {
-    if (this.hintsLeft <= 0 || this.gameOver || this.paused) return null;
+    const unlimited = !!this.modeConf.unlimitedHints;
+    if ((!unlimited && this.hintsLeft <= 0) || this.gameOver || this.paused) return null;
     if (this.givenSet.has(idx) || this.userGrid[idx] === this.solution[idx]) return null;
     if (this.userGrid[idx] !== 0) this.saveHistory(idx);
     const value = this.solution[idx];
@@ -3530,7 +5458,8 @@ SZ.GameState = class {
     this.notes[idx] = new Set();
     this._clearRelatedNotes(idx, value);
     this._refreshNotesForPeers(idx);
-    this.hintsLeft--;
+    if (!unlimited) this.hintsLeft--;
+    this.hintsUsedCount++;
     this.score = Math.max(0, this.score - 100);
     this._updateFilled();
     return { idx, value };
@@ -3621,11 +5550,13 @@ SZ.GameState = class {
       notes: this.notes.map(s => [...s]),
       givenArr: [...this.givenSet],
       selectedCell: this.selectedCell, noteMode: this.noteMode,
-      hintsLeft: this.hintsLeft, mistakes: this.mistakes, score: this.score,
+      hintsLeft: this.hintsLeft, hintsUsedCount: this.hintsUsedCount, mistakes: this.mistakes, score: this.score,
       timerSec: this.timerSec, filledCount: this.filledCount, paused: this.paused,
-      gameOver: this.gameOver, comboCount: this.comboCount, history: this.history,
+      gameOver: this.gameOver, comboCount: this.comboCount, history: this.history, redoStack: this.redoStack,
       challengeType: this.challengeType, challengeDate: this.challengeDate,
-      constraints: this.constraints
+      constraints: this.constraints,
+      assistUnlocked: this.assistUnlocked, magicPencilUsed: this.magicPencilUsed,
+      logicHintCount: this.logicHintCount, puzzleSeed: this.puzzleSeed
     };
   }
 
@@ -3638,11 +5569,16 @@ SZ.GameState = class {
     this.notes = d.notes.map(arr => new Set(arr));
     this.givenSet = new Set(d.givenArr);
     this.selectedCell = d.selectedCell; this.noteMode = d.noteMode;
-    this.hintsLeft = d.hintsLeft; this.mistakes = d.mistakes; this.score = d.score;
+    this.hintsLeft = d.hintsLeft; this.hintsUsedCount = d.hintsUsedCount || 0; this.mistakes = d.mistakes; this.score = d.score;
     this.timerSec = d.timerSec; this.filledCount = d.filledCount; this.paused = d.paused;
     this.gameOver = d.gameOver; this.comboCount = d.comboCount || 0;
     this.history = d.history || [];
+    this.redoStack = d.redoStack || [];
     this.challengeType = d.challengeType; this.challengeDate = d.challengeDate;
+    this.assistUnlocked = d.assistUnlocked || false;
+    this.magicPencilUsed = d.magicPencilUsed || false;
+    this.logicHintCount = d.logicHintCount || 0;
+    this.puzzleSeed = d.puzzleSeed != null ? d.puzzleSeed : null;
     // PERF: invalidate cache so getEngineState rebuilds with the restored fields
     this._engineStateCache = null;
     this._engineStateKey = null;
@@ -3782,6 +5718,7 @@ SZ.Audio = {
   },
   noteOn()   { this.woodBlock({ freq: this._mtof(84), vol: 0.06 }); },
   undo()     { this.woodBlock({ freq: this._mtof(52), vol: 0.10 }); },
+  redo()     { this.woodBlock({ freq: this._mtof(64), vol: 0.10 }); },
   achievement() {
     [0, 4, 7, 12].forEach((iv, i) =>
       this.singingBowl({ freq: this._mtof(64 + iv), vol: 0.14, dur: 1.6, delay: i * 0.12 }));
@@ -4114,18 +6051,30 @@ SZ.Renderer = {
     const logicBtn = document.getElementById('logicHintBtn');
     const pencilBtn = document.getElementById('pencilBtn');
     const undoBtn = document.getElementById('undoBtn');
-    const isCompetitive = SZ.state.challengeType === 'daily' || SZ.state.challengeType === 'weekly';
-    hintBtn.disabled = mode.hints === 0;
-    // Logic Hint and Magic Pencil are disabled during the Daily Challenge
-    // specifically — both are uncapped/untracked assist tools, so allowing
-    // them would make the leaderboard not reflect actual solving skill.
-    // They remain fully available in every other mode.
-    logicBtn.disabled = mode.hints === 0 || isCompetitive;
+    const redoBtn = document.getElementById('redoBtn');
+    const isCompetitive = SZ.Assist.isCompetitive(SZ.state.challengeType);
+    hintBtn.disabled = !mode.unlimitedHints && SZ.state.hintsLeft <= 0;
+    // Logic Hint and Magic Pencil are fully blocked (no enable option) during
+    // Daily/Weekly Challenges so the leaderboard reflects actual solving skill.
+    // In Survival/Hardcore/Blind they're locked by default but can be turned
+    // on for that attempt via an explicit confirmation (see SZ.UI.magicPencil/
+    // logicHint) — clicking while locked opens that prompt rather than doing
+    // nothing, so they're left enabled here and gated at click time instead.
+    const assistUnlocked = SZ.Assist.isUnlocked(SZ.state.mode, SZ.state.challengeType, SZ.state.assistUnlocked);
+    logicBtn.disabled = isCompetitive;
     pencilBtn.disabled = isCompetitive;
-    pencilBtn.title = isCompetitive ? 'Disabled during Daily/Weekly Challenges to keep the leaderboard fair' : '';
-    logicBtn.title = isCompetitive ? 'Disabled during Daily/Weekly Challenges to keep the leaderboard fair' : '';
+    const lockedTitle = mode.assistLocked && !assistUnlocked
+      ? 'Locked by default in ' + mode.name + ' — click to enable for this puzzle'
+      : '';
+    pencilBtn.title = isCompetitive ? 'Disabled during Daily/Weekly Challenges to keep the leaderboard fair' : lockedTitle;
+    logicBtn.title = isCompetitive ? 'Disabled during Daily/Weekly Challenges to keep the leaderboard fair' : lockedTitle;
+    pencilBtn.classList.toggle('assist-locked', !isCompetitive && mode.assistLocked && !assistUnlocked);
+    logicBtn.classList.toggle('assist-locked', !isCompetitive && mode.assistLocked && !assistUnlocked);
     undoBtn.disabled = !mode.undo;
-    document.getElementById('hintCount').textContent = SZ.state.hintsLeft;
+    // Redo is gated by both mode.undo (no redo in modes that disable undo)
+    // and redoStack.length (nothing to redo right after a fresh move).
+    redoBtn.disabled = !mode.undo || SZ.state.redoStack.length === 0;
+    document.getElementById('hintCount').textContent = SZ.state.modeConf.unlimitedHints ? '∞' : SZ.state.hintsLeft;
   },
 
   // ── Constraint rendering (Killer, Thermo, Arrow) ────
@@ -4136,6 +6085,30 @@ SZ.Renderer = {
   },
 
   /** Build or update the SVG overlay for variant constraints + jigsaw borders. */
+  /** Re-render the constraint overlay after a cell value changes — only
+   *  actually needed for Killer (to hide/show cage decoration as cages
+   *  get solved/unsolved), so skip the work for every other variant. */
+  refreshKillerCages() {
+    if (SZ.state.variant !== 'killer') return;
+    const svg = document.getElementById('constraintOverlay');
+    if (!svg) { this._renderConstraints(); return; }
+    const cages = SZ.state.constraints;
+    if (!cages || cages.length === 0) return;
+    const cageSolved = cages.map(c =>
+      c.cells.every(idx => SZ.state.userGrid[idx] === SZ.state.solution[idx])
+    );
+    const groups = svg.querySelectorAll('.cage-group');
+    groups.forEach(g => {
+      const ci = parseInt(g.getAttribute('data-cage-idx'), 10);
+      if (isNaN(ci)) return;
+      if (cageSolved[ci]) {
+        g.classList.add('solved');
+      } else {
+        g.classList.remove('solved');
+      }
+    });
+  },
+
   _renderConstraints() {
     const variant = SZ.state.variant;
     const constraints = SZ.state.constraints;
@@ -4148,6 +6121,12 @@ SZ.Renderer = {
     if (!needOverlay) {
       const existing = document.getElementById('constraintOverlay');
       if (existing) existing.remove();
+      // Detach thermo hover listeners when the overlay is removed —
+      // otherwise they'd linger on cell divs forever.
+      if (this._thermoHoverDetachers) {
+        for (const det of this._thermoHoverDetachers) { try { det(); } catch (_) {} }
+        this._thermoHoverDetachers.length = 0;
+      }
       return;
     }
 
@@ -4186,6 +6165,14 @@ SZ.Renderer = {
     svg.setAttribute('height', bh);
     svg.innerHTML = '';
 
+    // Detach any thermo hover listeners from the previous render so we
+    // don't leak DOM-event bindings (each renderThermoSVG call attaches
+    // fresh mouseenter/mouseleave handlers to cell divs).
+    if (this._thermoHoverDetachers) {
+      for (const det of this._thermoHoverDetachers) { try { det(); } catch (_) {} }
+      this._thermoHoverDetachers.length = 0;
+    }
+
     const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || '#888';
     if (hasConstraints) {
       if (variant === 'killer') {
@@ -4218,70 +6205,7 @@ SZ.Renderer = {
     }
   },
 
-  _renderKillerSVG(svg, constraints, N, cw, ch) {
-    const cellToCage = new Array(N * N).fill(-1);
-    const cageColor = [];
-    constraints.forEach((c, ci) => {
-      c.cells.forEach(idx => cellToCage[idx] = ci);
-      cageColor[ci] = SZ.Constraints.getCageColor(ci);
-    });
-
-    // Draw cage sum labels
-    constraints.forEach((c, ci) => {
-      const first = Math.min(...c.cells);
-      const r = Math.floor(first / N), col = first % N;
-      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-      label.setAttribute('x', col * cw + 3);
-      label.setAttribute('y', r * ch + 11);
-      label.setAttribute('font-size', Math.max(8, cw * 0.18));
-      label.setAttribute('font-weight', '700');
-      label.setAttribute('fill', cageColor[ci]);
-      label.setAttribute('font-family', 'DM Sans, sans-serif');
-      label.textContent = c.sum;
-      svg.appendChild(label);
-    });
-
-    // Draw cage borders
-    for (let r = 0; r < N; r++) {
-      for (let c = 0; c < N; c++) {
-        const idx = r * N + c;
-        const ci = cellToCage[idx];
-        // Right border
-        if (c < N - 1 && cellToCage[idx + 1] !== ci) {
-          const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-          line.setAttribute('x1', (c + 1) * cw);
-          line.setAttribute('y1', r * ch);
-          line.setAttribute('x2', (c + 1) * cw);
-          line.setAttribute('y2', (r + 1) * ch);
-          line.setAttribute('stroke', cageColor[ci] || '#333');
-          line.setAttribute('stroke-width', '2.5');
-          svg.appendChild(line);
-        }
-        // Bottom border
-        if (r < N - 1 && cellToCage[idx + N] !== ci) {
-          const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-          line.setAttribute('x1', c * cw);
-          line.setAttribute('y1', (r + 1) * ch);
-          line.setAttribute('x2', (c + 1) * cw);
-          line.setAttribute('y2', (r + 1) * ch);
-          line.setAttribute('stroke', cageColor[ci] || '#333');
-          line.setAttribute('stroke-width', '2.5');
-          svg.appendChild(line);
-        }
-      }
-    }
-    // Outer border
-    const borderColor = this._cssVar('--box-border') || '#555';
-    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-    rect.setAttribute('x', '0'); rect.setAttribute('y', '0');
-    rect.setAttribute('width', N * cw); rect.setAttribute('height', N * ch);
-    rect.setAttribute('fill', 'none');
-    rect.setAttribute('stroke', borderColor);
-    rect.setAttribute('stroke-width', '3');
-    svg.appendChild(rect);
-  },
-
-  _renderThermoSVG(svg, constraints, N, cw, ch) {
+_renderThermoSVG(svg, constraints, N, cw, ch) {
     const accent = this._cssVar('--accent');
     constraints.forEach(thermo => {
       const cells = thermo.cells;
@@ -4416,7 +6340,7 @@ SZ.Stats = {
     const s = this.get();
     s.gamesPlayed++; s.gamesWon++;
     s.totalTime += timeSec;
-    s.hintsUsed += (SZ.Modes[state.mode].hints - state.hintsLeft);
+    s.hintsUsed += state.hintsUsedCount;
     s.mistakesMade += state.mistakes;
     s.currentStreak++;
     s.longestStreak = Math.max(s.longestStreak, s.currentStreak);
@@ -5022,6 +6946,7 @@ SZ.UI = {
     SZ.Renderer.updateHighlights();
     SZ.Renderer.updateNumpad();
     SZ.Renderer.updateProgress();
+    SZ.Renderer.refreshKillerCages();
     this.updateStatDisplays();
 
     if (!result.correct) {
@@ -5058,6 +6983,7 @@ SZ.UI = {
     SZ.Renderer.updateHighlights();
     SZ.Renderer.updateNumpad();
     SZ.Renderer.updateProgress();
+    SZ.Renderer.refreshKillerCages();
     SZ.Audio.erase();
     SZ.Save.save();
   },
@@ -5077,6 +7003,14 @@ SZ.UI = {
     SZ.Save.save();
   },
 
+  redoMove() {
+    if (!SZ.state.redo()) return;
+    SZ.Renderer.renderBoard();
+    this.updateStatDisplays();
+    SZ.Audio.redo();
+    SZ.Save.save();
+  },
+
   useHint() {
     if (!SZ.state.selectedCell || SZ.state.gameOver || SZ.state.paused) return;
     const [r, c] = SZ.state.selectedCell;
@@ -5091,7 +7025,8 @@ SZ.UI = {
     SZ.Renderer.updateHighlights();
     SZ.Renderer.updateNumpad();
     SZ.Renderer.updateProgress();
-    document.getElementById('hintCount').textContent = SZ.state.hintsLeft;
+    SZ.Renderer.refreshKillerCages();
+    document.getElementById('hintCount').textContent = SZ.state.modeConf.unlimitedHints ? '∞' : SZ.state.hintsLeft;
     SZ.Audio.hint();
     this.updateStatDisplays();
     this.checkWin();
@@ -5101,12 +7036,17 @@ SZ.UI = {
   /** Magic Pencil — auto-fill candidates for all empty cells. */
   magicPencil() {
     if (SZ.state.gameOver || SZ.state.paused) return;
-    if (SZ.state.challengeType === 'daily' || SZ.state.challengeType === 'weekly') {
+    if (SZ.Assist.isCompetitive(SZ.state.challengeType)) {
       this.showToast('Magic Pencil is disabled during Daily/Weekly Challenges');
+      return;
+    }
+    if (!SZ.Assist.isUnlocked(SZ.state.mode, SZ.state.challengeType, SZ.state.assistUnlocked)) {
+      this.confirmAssistUnlock(() => this.magicPencil());
       return;
     }
     const changed = SZ.state.autoPencil('all');
     for (const idx of changed) SZ.Renderer.updateCell(idx);
+    SZ.state.magicPencilUsed = true;
     SZ.Audio.hint();
     this.showToast('Magic pencil filled ' + changed.length + ' cells');
     SZ.Save.save();
@@ -5115,8 +7055,12 @@ SZ.UI = {
   /** Logic Hint — find a Naked/Hidden Single and explain it. */
   logicHint() {
     if (SZ.state.gameOver || SZ.state.paused) return;
-    if (SZ.state.challengeType === 'daily' || SZ.state.challengeType === 'weekly') {
+    if (SZ.Assist.isCompetitive(SZ.state.challengeType)) {
       this.showToast('Logic Hint is disabled during Daily/Weekly Challenges');
+      return;
+    }
+    if (!SZ.Assist.isUnlocked(SZ.state.mode, SZ.state.challengeType, SZ.state.assistUnlocked)) {
+      this.confirmAssistUnlock(() => this.logicHint());
       return;
     }
     const engineState = SZ.state.getEngineState();
@@ -5138,7 +7082,55 @@ SZ.UI = {
         }
       });
     }
+    SZ.state.logicHintCount++;
     SZ.Audio.hint();
+  },
+
+  /**
+   * Confirm-to-enable prompt for assist-locked modes (Survival/Hardcore/Blind).
+   * These modes disable Logic Hint + Magic Pencil by default since they're
+   * built around limited/no assistance; the player can still opt in for a
+   * given attempt, but has to explicitly say so first. Never called for
+   * Daily/Weekly Challenges — SZ.Assist.canOfferUnlock is false there.
+   */
+  confirmAssistUnlock(onConfirm) {
+    if (!SZ.Assist.canOfferUnlock(SZ.state.mode, SZ.state.challengeType)) return;
+    const modeConf = SZ.state.modeConf;
+    const diffName = SZ.Difficulties[SZ.state.difficulty].name;
+    document.getElementById('assistConfirmTitle').textContent = `Enable assist tools in ${modeConf.name}?`;
+    document.getElementById('assistConfirmMessage').textContent =
+      `${modeConf.name} mode disables Logic Hint and Magic Pencil by default at ${diffName} difficulty. ` +
+      `Enabling them will apply for the rest of this puzzle.`;
+
+    const overlay = document.getElementById('assistConfirmOverlay');
+    const confirmBtn = document.getElementById('assistConfirmBtn');
+    const cancelBtn = document.getElementById('assistCancelBtn');
+
+    // Rebind fresh (clone) each time so listeners from a previous prompt don't stack.
+    const newConfirm = confirmBtn.cloneNode(true);
+    confirmBtn.parentNode.replaceChild(newConfirm, confirmBtn);
+    const newCancel = cancelBtn.cloneNode(true);
+    cancelBtn.parentNode.replaceChild(newCancel, cancelBtn);
+
+    const close = () => {
+      overlay.classList.add('closing');
+      setTimeout(() => {
+        overlay.style.display = 'none';
+        overlay.classList.remove('closing');
+      }, 200);
+    };
+
+    newConfirm.addEventListener('click', () => {
+      close();
+      SZ.state.assistUnlocked = true;
+      SZ.Renderer.updateModeUI();
+      this.showToast('Assist tools enabled for this puzzle');
+      SZ.Save.save();
+      onConfirm();
+    });
+    newCancel.addEventListener('click', close);
+
+    overlay.style.display = 'flex';
   },
 
   // ── Timer ─────────────────────────────────────────────
@@ -5202,7 +7194,10 @@ SZ.UI = {
     document.getElementById('mistakeDisplay').textContent = SZ.state.mistakes;
     document.getElementById('scoreDisplay').textContent = SZ.state.score;
     document.getElementById('streakDisplay').textContent = SZ.state.comboCount;
-    document.getElementById('hintCount').textContent = SZ.state.hintsLeft;
+    document.getElementById('hintCount').textContent = SZ.state.modeConf.unlimitedHints ? '∞' : SZ.state.hintsLeft;
+    // Refresh mode UI so the Redo button enable/disable stays in sync
+    // with the redo stack after every move.
+    SZ.Renderer.updateModeUI();
   },
 
   // ── Win / Fail flow ───────────────────────────────────
@@ -5218,7 +7213,7 @@ SZ.UI = {
     // Stats
     const ctx = {
       won: true, mistakes: SZ.state.mistakes,
-      hintsUsed: SZ.Modes[SZ.state.mode].hints - SZ.state.hintsLeft,
+      hintsUsed: SZ.state.hintsUsedCount,
       timeSec: SZ.state.timerSec, difficulty: SZ.state.difficulty,
       size: SZ.state.size, variant: SZ.state.variant,
       daily: SZ.state.challengeType === 'daily'
@@ -5231,7 +7226,7 @@ SZ.UI = {
     // Social: submit the daily score (server verifies + times it) and
     // queue the post-win rating prompt. Both no-op safely if offline.
     if (SZ.Social && SZ.state.challengeType === 'daily') {
-      const hintsUsedForSocial = SZ.Modes[SZ.state.mode].hints - SZ.state.hintsLeft;
+      const hintsUsedForSocial = SZ.state.hintsUsedCount;
       SZ.Social.DailyAttempt.complete(SZ.state.userGrid, SZ.state.mistakes, hintsUsedForSocial)
         .then(result => { if (result) SZ.SocialUI.showRankToast(result.rank_today, result.time_seconds); });
     }
@@ -5267,7 +7262,7 @@ SZ.UI = {
     }
     const ctx = {
       won: false, mistakes: SZ.state.mistakes,
-      hintsUsed: SZ.Modes[SZ.state.mode].hints - SZ.state.hintsLeft,
+      hintsUsed: SZ.state.hintsUsedCount,
       timeSec: SZ.state.timerSec, difficulty: SZ.state.difficulty,
       size: SZ.state.size, variant: SZ.state.variant, daily: false
     };
@@ -5289,6 +7284,9 @@ SZ.UI = {
     document.getElementById('winMistakes').textContent = SZ.state.mistakes;
     document.getElementById('winScore').textContent = SZ.state.score;
     document.getElementById('winXP').textContent = xpResult.xpGained > 0 ? '+' + xpResult.xpGained : '—';
+    document.getElementById('winHints').textContent = SZ.state.hintsUsedCount;
+    document.getElementById('winPencil').textContent = SZ.state.magicPencilUsed ? 'Used' : 'Not used';
+    document.getElementById('winLogicHints').textContent = SZ.state.logicHintCount;
     document.getElementById('winOverlay').style.display = 'flex';
     if (xpResult.leveledUp) {
       setTimeout(() => this.showToast(`Level Up! You are now level ${xpResult.newLevel}`), 800);
@@ -5342,6 +7340,7 @@ SZ.UI = {
     this.updateStatDisplays();
     document.getElementById('timerDisplay').textContent = '00:00';
     document.getElementById('undoBtn').style.opacity = '1';
+    document.getElementById('redoBtn').style.opacity = '1';
     this.startTimer();
     // Apply body data attributes
     document.body.setAttribute('data-mode', SZ.state.mode);
@@ -5355,11 +7354,13 @@ SZ.UI = {
 
   // ── Share ─────────────────────────────────────────────
   _shareUrl: '',
+  _shareText: '',
 
-  shareGame() {
-    // Always share the canonical game URL (not localhost)
-    const shareUrl = 'https://joudlight.github.io/Sudoku-Zen/';
+  shareGame(customUrl, customText) {
+    const shareUrl = customUrl || 'https://joudlight.github.io/Sudoku-Zen/';
+    const shareText = customText || 'Play Sudoku Zen — premium puzzles with jigsaw, killer, thermo & more!';
     this._shareUrl = shareUrl;
+    this._shareText = shareText;
     const encoded = encodeURIComponent(shareUrl);
 
     // Set QR code
@@ -5389,15 +7390,42 @@ SZ.UI = {
     this.showOverlay('shareOverlay');
   },
 
+  /**
+   * Share this exact puzzle + your result. Builds a link encoding the
+   * puzzle's RNG seed, variant, size, and difficulty, so anyone who opens
+   * it gets the identical grid (see SZ.UI.tryLoadSharedPuzzle) and can
+   * compare their finished stats against yours.
+   * Daily/Weekly Challenges are already the same puzzle for everyone by
+   * date, so there's nothing extra to encode — fall back to the plain app link.
+   */
+  shareResult() {
+    if (SZ.Assist.isCompetitive(SZ.state.challengeType) || SZ.state.puzzleSeed == null) {
+      this.shareGame();
+      return;
+    }
+    const base = 'https://joudlight.github.io/Sudoku-Zen/';
+    const params = new URLSearchParams({
+      seed: SZ.state.puzzleSeed, v: SZ.state.variant, s: SZ.state.size,
+      d: SZ.state.difficulty, m: SZ.state.mode
+    });
+    const url = `${base}?${params.toString()}`;
+    const mmss = this.formatTime(SZ.state.timerSec);
+    const diffName = SZ.Difficulties[SZ.state.difficulty].name;
+    const mistakeWord = SZ.state.mistakes === 1 ? 'mistake' : 'mistakes';
+    const text = `I solved a ${diffName} Sudoku Zen puzzle in ${mmss} with ${SZ.state.mistakes} ${mistakeWord}. Think you can beat it? Play the exact same puzzle:`;
+    this.shareGame(url, text);
+  },
+
   _shareVia(platform, encodedUrl, rawUrl) {
     const e = s => encodeURIComponent(s);
+    const text = this._shareText || 'Play Sudoku Zen — premium puzzle platform';
     const links = {
-      twitter:   `https://twitter.com/intent/tweet?text=${e('Play Sudoku Zen — premium puzzles with jigsaw, killer, thermo & more!')}&url=${encodedUrl}`,
+      twitter:   `https://twitter.com/intent/tweet?text=${e(text)}&url=${encodedUrl}`,
       facebook:  `https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}`,
-      whatsapp:  `https://wa.me/?text=${e('Play Sudoku Zen! ') + encodedUrl}`,
-      telegram:  `https://t.me/share/url?url=${encodedUrl}&text=${e('Play Sudoku Zen — premium puzzle platform')}`,
-      reddit:    `https://reddit.com/submit?url=${encodedUrl}&title=${e('Sudoku Zen — Premium Puzzle Platform')}`,
-      email:     `mailto:?subject=${e('Play Sudoku Zen')}&body=${e('Try Sudoku Zen — multiple board sizes, variants, and modes!\n\n') + encodedUrl}`
+      whatsapp:  `https://wa.me/?text=${e(text + ' ') + encodedUrl}`,
+      telegram:  `https://t.me/share/url?url=${encodedUrl}&text=${e(text)}`,
+      reddit:    `https://reddit.com/submit?url=${encodedUrl}&title=${e(text)}`,
+      email:     `mailto:?subject=${e('Play Sudoku Zen')}&body=${e(text + '\n\n') + encodedUrl}`
     };
     const link = links[platform];
     if (link) window.open(link, '_blank', 'width=600,height=500,noopener');
@@ -5421,6 +7449,29 @@ SZ.UI = {
       document.execCommand('copy');
       this.showToast('Link copied!');
     }
+  },
+
+  /**
+   * Loads a puzzle from a shared result link (?seed=&v=&s=&d=&m=), if
+   * present and valid. Called once at boot, before save-restore. Returns
+   * true if a shared puzzle was loaded (caller should skip normal boot).
+   */
+  tryLoadSharedPuzzle() {
+    const params = new URLSearchParams(location.search);
+    const seedStr = params.get('seed');
+    if (!seedStr || !/^\d+$/.test(seedStr)) return false;
+    const size = params.get('s') || '9x9';
+    const variant = params.get('v') || 'classic';
+    const difficulty = params.get('d') || 'medium';
+    const mode = params.get('m') || 'zen';
+    if (!SZ.Boards[size] || !SZ.Variants[variant] || !SZ.Difficulties[difficulty] || !SZ.Modes[mode]) return false;
+    SZ.state.newGame({ size, variant, difficulty, mode, seed: Number(seedStr), challengeType: null, challengeDate: null });
+    this.startNewGame();
+    // Clean the URL so a later refresh resumes the in-progress game via the
+    // normal save system instead of re-generating this shared puzzle fresh.
+    history.replaceState(null, '', location.pathname);
+    this.showToast("Loaded a friend's shared puzzle — good luck!");
+    return true;
   },
 
   // ── Toast ─────────────────────────────────────────────
@@ -5519,6 +7570,7 @@ SZ.Keyboard = {
     if (key === 'h') { SZ.UI.useHint(); return; }
     if (key === 'l') { SZ.UI.logicHint(); return; }
     if (key === 'z') { SZ.UI.undoMove(); return; }
+    if (key === 'y') { SZ.UI.redoMove(); return; }
     if (key === 'p') { SZ.UI.togglePause(); return; }
 
     if (!SZ.state.selectedCell) return;
@@ -5538,8 +7590,9 @@ SZ.Keyboard = {
    ═══════════════════════════════════════════════════════ */
 SZ.Init = {
   run() {
-    // Unlock audio on first gesture
-    SZ.Audio.unlock();
+    // Unlock audio on first gesture (do NOT call unlock() eagerly here —
+    // there's no user gesture yet at page load, so ctx.resume() would be
+    // blocked by the browser's autoplay policy and log a console warning).
     document.addEventListener('pointerdown', () => SZ.Audio.unlock(), { once: true });
 
     // Theme
@@ -5616,19 +7669,21 @@ SZ.Init = {
     });
 
     // Action buttons
-    document.getElementById('noteBtn').addEventListener('click', SZ.UI.toggleNoteMode);
-    document.getElementById('pencilBtn').addEventListener('click', SZ.UI.magicPencil);
-    document.getElementById('eraseBtn').addEventListener('click', SZ.UI.eraseCell);
-    document.getElementById('hintBtn').addEventListener('click', SZ.UI.useHint);
-    document.getElementById('logicHintBtn').addEventListener('click', SZ.UI.logicHint);
-    document.getElementById('undoBtn').addEventListener('click', SZ.UI.undoMove);
-    document.getElementById('pauseBtn').addEventListener('click', SZ.UI.togglePause);
+    document.getElementById('noteBtn').addEventListener('click', () => SZ.UI.toggleNoteMode());
+    document.getElementById('pencilBtn').addEventListener('click', () => SZ.UI.magicPencil());
+    document.getElementById('eraseBtn').addEventListener('click', () => SZ.UI.eraseCell());
+    document.getElementById('hintBtn').addEventListener('click', () => SZ.UI.useHint());
+    document.getElementById('logicHintBtn').addEventListener('click', () => SZ.UI.logicHint());
+    document.getElementById('undoBtn').addEventListener('click', () => SZ.UI.undoMove());
+    document.getElementById('redoBtn').addEventListener('click', () => SZ.UI.redoMove());
+    document.getElementById('pauseBtn').addEventListener('click', () => SZ.UI.togglePause());
     document.getElementById('newGameBtn').addEventListener('click', () => SZ.UI.newGame());
     document.getElementById('shareBtn').addEventListener('click', () => SZ.UI.shareGame());
 
     // Win overlay
     document.getElementById('playAgainBtn').addEventListener('click', () => { SZ.UI.hideOverlay('winOverlay'); SZ.UI.newGame(); });
     document.getElementById('reviewBtn').addEventListener('click', () => SZ.UI.hideOverlay('winOverlay'));
+    document.getElementById('shareResultBtn').addEventListener('click', () => SZ.UI.shareResult());
 
     // Close overlays on background click
     document.querySelectorAll('.overlay').forEach(ov => {
@@ -5651,8 +7706,12 @@ SZ.Init = {
     window.addEventListener('resize', _onResize, { passive: true });
     window.addEventListener('orientationchange', _onResize, { passive: true });
 
-    // Try to restore saved game; otherwise start fresh
-    if (SZ.Save.load()) {
+    // A shared result link (?seed=...) takes priority over a saved game —
+    // someone clicking a friend's link wants that specific puzzle, not
+    // whatever they were previously mid-solving locally.
+    if (SZ.UI.tryLoadSharedPuzzle()) {
+      // handled — board already built and rendered by tryLoadSharedPuzzle
+    } else if (SZ.Save.load()) {
       SZ.Renderer.buildBoard();
       SZ.Renderer.buildNumpad();
       SZ.Renderer.renderBoard();
