@@ -1,26 +1,48 @@
 {
-  "name": "Sudoku Zen — Free Daily Online Sudoku Puzzles",
+  "name": "Sudoku Zen — Premium Sudoku Platform",
   "short_name": "Sudoku Zen",
-  "description": "Challenge your mind with Sudoku Zen. Free daily sudoku puzzles with 4 difficulty levels.",
-  "start_url": "/",
+  "description": "Multiple board sizes, variants (Classic, X, Jigsaw, Hyper, Killer, Thermo, Arrow), game modes, daily challenges, achievements and themes.",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
-  "orientation": "portrait",
-  "background_color": "#f5f0e8",
+  "orientation": "any",
+  "background_color": "#fbf7f0",
   "theme_color": "#b45309",
-  "categories": ["games", "puzzle"],
   "lang": "en",
+  "dir": "ltr",
+  "categories": ["games", "puzzles", "education"],
   "icons": [
     {
-      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' fill='%23b45309' rx='32'/%3E%3Ctext x='96' y='140' text-anchor='middle' font-size='120' fill='white'%3E9%3C/text%3E%3C/svg%3E",
+      "src": "icon-192.png",
       "sizes": "192x192",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "type": "image/png",
+      "purpose": "any"
     },
     {
-      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' fill='%23b45309' rx='64'/%3E%3Ctext x='256' y='360' text-anchor='middle' font-size='320' fill='white'%3E9%3C/text%3E%3C/svg%3E",
+      "src": "icon-512.png",
       "sizes": "512x512",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "New Game",
+      "short_name": "New",
+      "description": "Start a new random puzzle",
+      "url": "./?action=new"
+    },
+    {
+      "name": "Daily Challenge",
+      "short_name": "Daily",
+      "description": "Today's daily challenge puzzle",
+      "url": "./?action=daily"
     }
   ]
 }

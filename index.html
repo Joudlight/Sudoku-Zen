@@ -24,6 +24,23 @@
 
 <meta name="theme-color" content="#b45309" id="themeColorMeta">
 <link rel="manifest" href="manifest.json">
+
+<!-- PWA / iOS Add-to-Home-Screen -->
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="apple-touch-icon" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" sizes="512x512" href="icon-512.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Sudoku Zen">
+
+<!-- Standard PNG favicon (in addition to the inline SVG emoji above) -->
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
+
+<!-- SEO: canonical URL -->
+<link rel="canonical" href="https://joudlight.github.io/Sudoku-Zen/">
+
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧩</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -565,6 +582,25 @@ header {
   user-select: none; -webkit-tap-highlight-color: transparent; outline: none;
 }
 
+/* Keyboard focus indicator — visible only when navigating by keyboard,
+   not when clicking. Matches WCAG 2.4.7 (Focus Visible) and avoids the
+   "outline always on after click" flicker that removing outline:none
+   would otherwise introduce. */
+.cell:focus-visible,
+button:focus-visible,
+.num-btn:focus-visible,
+.cfg-btn:focus-visible,
+.action-btn:focus-visible,
+.mbtn:focus-visible,
+.sz-select:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: 4px;
+  z-index: 2;
+  position: relative;
+}
+
 /* Box borders for standard sizes */
 #board[data-size="4"] .cell[data-col="1"] { border-right: 2px solid var(--box-border); }
 #board[data-size="4"] .cell[data-col="3"] { border-right: none; }
@@ -937,6 +973,11 @@ footer a:hover { color: var(--accent); }
   dominant-baseline: hanging;
 }
 #board[data-size="16"] #constraintOverlay text { font-size: 7px; }
+/* Cage group fade transition — solved cages gracefully disappear */
+.cage-group { transition: opacity 0.25s ease-out; }
+.cage-group.solved { opacity: 0; pointer-events: none; }
+.cage-label-halo { paint-order: stroke fill; }
+
 
 /* ═══════════════════════════════════════════════════════
    OVERLAYS / MODALS
@@ -998,6 +1039,327 @@ footer a:hover { color: var(--accent); }
   transition: all 0.15s ease, background 0.35s ease, color 0.35s ease, border-color 0.35s ease;
 }
 .mbtn-secondary:hover { border-color: var(--ink); transform: translateY(-1px); }
+
+/* ═══════════════════════════════════════════════════════
+   NICKNAME MODAL — first-launch "choose your name" dialog
+   A polished, animated, font-rich replacement for the
+   default SocialUI.promptNickname popup.
+   ═══════════════════════════════════════════════════════ */
+#nicknameOverlay {
+  z-index: 700; /* sits above other overlays */
+  background: radial-gradient(ellipse at center,
+              rgba(28, 25, 23, 0.55) 0%,
+              rgba(28, 25, 23, 0.78) 100%);
+  backdrop-filter: blur(10px) saturate(1.1);
+  -webkit-backdrop-filter: blur(10px) saturate(1.1);
+}
+#nicknameOverlay .nick-modal {
+  position: relative;
+  background: var(--paper);
+  border-radius: 24px;
+  padding: 44px 44px 36px;
+  text-align: center;
+  max-width: 440px;
+  width: 100%;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.6) inset,
+    0 30px 90px rgba(0,0,0,0.35),
+    0 8px 24px rgba(0,0,0,0.18);
+  animation: nickRise 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+  overflow: hidden;
+  transition: background 0.35s ease;
+}
+#nicknameOverlay .nick-modal::before {
+  /* soft accent glow at the top — adds depth without distracting */
+  content: '';
+  position: absolute;
+  top: -60%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 280px;
+  height: 280px;
+  background: radial-gradient(circle, var(--accent) 0%, transparent 65%);
+  opacity: 0.18;
+  pointer-events: none;
+  animation: nickBreathe 4.5s ease-in-out infinite;
+}
+#nicknameOverlay .nick-emoji {
+  font-size: 52px;
+  line-height: 1;
+  margin-bottom: 12px;
+  display: inline-block;
+  animation: nickWave 2.2s ease-in-out infinite;
+  filter: drop-shadow(0 6px 10px rgba(0,0,0,0.18));
+}
+#nicknameOverlay .nick-title {
+  font-family: 'DM Serif Display', Georgia, serif;
+  font-size: 32px;
+  font-weight: 400;
+  letter-spacing: -0.3px;
+  color: var(--ink);
+  margin: 0 0 8px;
+  transition: color 0.35s ease;
+}
+#nicknameOverlay .nick-subtitle {
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.65;
+  color: var(--ink-light);
+  margin: 0 auto 28px;
+  max-width: 320px;
+  transition: color 0.35s ease;
+}
+#nicknameOverlay .nick-field {
+  position: relative;
+  margin: 0 auto 8px;
+  max-width: 320px;
+}
+#nicknameOverlay .nick-input {
+  width: 100%;
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  text-align: center;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1.5px solid var(--cell-border);
+  border-radius: 12px;
+  padding: 14px 18px;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.35s ease, color 0.35s ease;
+  box-sizing: border-box;
+}
+#nicknameOverlay .nick-input::placeholder {
+  color: var(--ink-light);
+  opacity: 0.6;
+  font-weight: 400;
+}
+#nicknameOverlay .nick-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+#nicknameOverlay .nick-input.nick-input-error {
+  border-color: #dc2626;
+  animation: nickShake 0.4s ease;
+}
+#nicknameOverlay .nick-hint {
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-size: 11px;
+  color: var(--ink-light);
+  margin: 10px auto 22px;
+  max-width: 320px;
+  min-height: 16px;
+  letter-spacing: 0.3px;
+  transition: color 0.2s ease;
+}
+#nicknameOverlay .nick-hint.nick-hint-error { color: #dc2626; }
+#nicknameOverlay .nick-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+#nicknameOverlay .nick-btn {
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  padding: 12px 28px;
+  border-radius: 11px;
+  border: none;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.2s ease, background 0.2s ease, color 0.35s ease;
+}
+#nicknameOverlay .nick-btn-primary {
+  background: var(--ink);
+  color: var(--paper);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.18);
+}
+#nicknameOverlay .nick-btn-primary:hover {
+  background: var(--accent);
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+#nicknameOverlay .nick-btn-primary:active { transform: translateY(0); }
+#nicknameOverlay .nick-btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+#nicknameOverlay.closing .nick-modal {
+  animation: nickFall 0.3s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+@keyframes nickRise {
+  0%   { opacity: 0; transform: translateY(28px) scale(0.96); }
+  60%  { opacity: 1; transform: translateY(-4px) scale(1.01); }
+  100% { opacity: 1; transform: translateY(0)   scale(1);    }
+}
+@keyframes nickFall {
+  0%   { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(18px) scale(0.97); }
+}
+@keyframes nickWave {
+  0%, 100% { transform: rotate(-8deg); }
+  50%      { transform: rotate(8deg);  }
+}
+@keyframes nickBreathe {
+  0%, 100% { opacity: 0.14; transform: translateX(-50%) scale(1);    }
+  50%      { opacity: 0.22; transform: translateX(-50%) scale(1.08); }
+}
+@keyframes nickShake {
+  0%, 100% { transform: translateX(0); }
+  20%      { transform: translateX(-8px); }
+  40%      { transform: translateX(8px); }
+  60%      { transform: translateX(-6px); }
+  80%      { transform: translateX(6px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  #nicknameOverlay .nick-modal,
+  #nicknameOverlay .nick-emoji,
+  #nicknameOverlay .nick-modal::before {
+    animation: none !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   PUZZLE LOADER — shown while a hard puzzle is generating.
+   A themed 3×3 grid "lights up" cell-by-cell, evoking a
+   sudoku board being filled in. Sits above all other
+   overlays so it covers the board fade transition too.
+   ═══════════════════════════════════════════════════════ */
+#puzzleLoader {
+  position: fixed; inset: 0;
+  background: radial-gradient(ellipse at center,
+              rgba(28, 25, 23, 0.55) 0%,
+              rgba(28, 25, 23, 0.78) 100%);
+  backdrop-filter: blur(8px) saturate(1.05);
+  -webkit-backdrop-filter: blur(8px) saturate(1.05);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 800; /* above nicknameOverlay (700) and other overlays (500) */
+  padding: 16px;
+  animation: plFadeIn 0.18s ease both;
+  cursor: progress;
+}
+#puzzleLoader.pl-closing { animation: plFadeOut 0.2s ease forwards; }
+#puzzleLoader .pl-card {
+  position: relative;
+  background: var(--paper);
+  border-radius: 22px;
+  padding: 38px 46px 32px;
+  text-align: center;
+  min-width: 260px;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.6) inset,
+    0 24px 80px rgba(0,0,0,0.32),
+    0 8px 24px rgba(0,0,0,0.16);
+  animation: plRise 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
+  overflow: hidden;
+  transition: background 0.35s ease;
+}
+#puzzleLoader .pl-card::before {
+  /* Soft accent glow behind the grid — adds depth */
+  content: '';
+  position: absolute;
+  top: -45%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 240px; height: 240px;
+  background: radial-gradient(circle, var(--accent) 0%, transparent 65%);
+  opacity: 0.16;
+  pointer-events: none;
+  animation: plBreathe 3.8s ease-in-out infinite;
+}
+#puzzleLoader .pl-grid {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, 22px);
+  grid-template-rows: repeat(3, 22px);
+  gap: 3px;
+  margin: 0 auto 22px;
+  padding: 5px;
+  background: var(--bg);
+  border-radius: 8px;
+  border: 1.5px solid var(--cell-border);
+  width: fit-content;
+  transition: background 0.35s ease, border-color 0.35s ease;
+}
+#puzzleLoader .pl-cell {
+  background: var(--cell-border);
+  border-radius: 3px;
+  animation: plPulse 1.4s ease-in-out infinite;
+  transition: background 0.35s ease;
+}
+/* Sequence the 9 cells so they light up one after another — reads as a
+   sudoku board being filled. Total cycle = 1.4s, each cell offset by ~0.1s. */
+#puzzleLoader .pl-cell:nth-child(1) { animation-delay: 0.00s; }
+#puzzleLoader .pl-cell:nth-child(2) { animation-delay: 0.10s; }
+#puzzleLoader .pl-cell:nth-child(3) { animation-delay: 0.20s; }
+#puzzleLoader .pl-cell:nth-child(4) { animation-delay: 0.30s; }
+#puzzleLoader .pl-cell:nth-child(5) { animation-delay: 0.40s; }
+#puzzleLoader .pl-cell:nth-child(6) { animation-delay: 0.50s; }
+#puzzleLoader .pl-cell:nth-child(7) { animation-delay: 0.60s; }
+#puzzleLoader .pl-cell:nth-child(8) { animation-delay: 0.70s; }
+#puzzleLoader .pl-cell:nth-child(9) { animation-delay: 0.80s; }
+#puzzleLoader .pl-title {
+  font-family: 'DM Serif Display', Georgia, serif;
+  font-size: 24px;
+  font-weight: 400;
+  letter-spacing: -0.2px;
+  color: var(--ink);
+  margin: 0 0 6px;
+  position: relative;
+  transition: color 0.35s ease;
+}
+#puzzleLoader .pl-subtitle {
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink-light);
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  position: relative;
+  transition: color 0.35s ease;
+}
+#puzzleLoader .pl-subtitle .pl-dot {
+  display: inline-block;
+  margin: 0 6px;
+  opacity: 0.5;
+}
+@keyframes plPulse {
+  0%, 100% {
+    background: var(--cell-border);
+    transform: scale(1);
+  }
+  45% {
+    background: var(--accent);
+    transform: scale(1.08);
+  }
+}
+@keyframes plFadeIn  { from { opacity: 0; } to { opacity: 1; } }
+@keyframes plFadeOut { from { opacity: 1; } to { opacity: 0; } }
+@keyframes plRise {
+  0%   { opacity: 0; transform: translateY(14px) scale(0.97); }
+  100% { opacity: 1; transform: translateY(0)   scale(1);    }
+}
+@keyframes plBreathe {
+  0%, 100% { opacity: 0.12; transform: translateX(-50%) scale(1);    }
+  50%      { opacity: 0.20; transform: translateX(-50%) scale(1.08); }
+}
+@media (prefers-reduced-motion: reduce) {
+  #puzzleLoader,
+  #puzzleLoader .pl-card,
+  #puzzleLoader .pl-card::before,
+  #puzzleLoader .pl-cell {
+    animation: none !important;
+  }
+  #puzzleLoader .pl-cell {
+    background: var(--accent);
+    opacity: 0.4;
+  }
+}
 
 /* Help grid */
 .help-grid { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; text-align: left; margin: 16px 0; }
@@ -1289,6 +1651,63 @@ footer a:hover { color: var(--accent); }
   .cell.just-placed::before { display: none; }
 }
 </style>
+
+<!-- ═══════════════════════════════════════════════════════
+   STRUCTURED DATA — helps search engines and app stores understand
+   that this is a playable web application / game.
+   ═══════════════════════════════════════════════════════ -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Sudoku Zen",
+  "alternateName": "Sudoku Zen — Premium Sudoku Platform",
+  "description": "Multiple board sizes, variants (Classic, X, Jigsaw, Hyper, Killer, Thermo, Arrow), game modes, daily challenges, achievements and themes.",
+  "url": "https://joudlight.github.io/Sudoku-Zen/",
+  "applicationCategory": "GameApplication",
+  "applicationSubCategory": "Puzzle",
+  "operatingSystem": "Any (web browser)",
+  "browserRequirements": "Requires JavaScript. Requires HTML5.",
+  "genre": ["Puzzle", "Sudoku", "Brain Training"],
+  "gamePlatform": ["Web Browser", "Mobile", "Desktop"],
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  },
+  "inLanguage": "en",
+  "isAccessibleForFree": true,
+  "aggregateRating": {
+    "@type": "AggregateRating",
+    "ratingValue": "5",
+    "ratingCount": "1",
+    "bestRating": "5",
+    "worstRating": "1"
+  },
+  "featureList": [
+    "4×4, 6×6, 9×9 and 16×16 board sizes",
+    "7 variants: Classic, X-Sudoku, Jigsaw, Hyper, Killer, Thermo, Arrow",
+    "6 game modes: Zen, Timed, Survival, Hardcore, Practice, Blind",
+    "7 difficulty levels from Beginner to Extreme",
+    "Daily and weekly challenges with global leaderboards",
+    "Achievements, statistics, and progression system",
+    "7 themes, polished animations, and synthesized audio"
+  ]
+}
+</script>
+
+<noscript>
+  <div style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#fbf7f0;color:#1c1917;font-family:system-ui,sans-serif;padding:32px;text-align:center;">
+    <div style="max-width:480px;">
+      <h1 style="font-size:28px;margin-bottom:12px;">🧩 Sudoku Zen needs JavaScript</h1>
+      <p style="font-size:15px;line-height:1.6;color:#57534e;">
+        Sudoku Zen is a fully client-side puzzle app and requires JavaScript to
+        generate and render boards. Please enable JavaScript in your browser
+        settings to play.
+      </p>
+    </div>
+  </div>
+</noscript>
 </head>
 <body>
 
@@ -1339,7 +1758,7 @@ footer a:hover { color: var(--accent); }
   <!-- ═══ GAME LAYOUT ═══ -->
   <div class="game-layout">
     <section class="board-wrap" aria-label="Sudoku board">
-      <div id="board" role="grid" data-size="9" data-variant="classic"></div>
+      <div id="board" role="grid" tabindex="0" aria-label="Sudoku board — use arrow keys to navigate, type numbers to enter" data-size="9" data-variant="classic"></div>
     </section>
     <aside class="side-panel" aria-label="Game controls">
       <div class="progress-wrap">
@@ -1689,11 +2108,23 @@ SZ.VariantEngine = {
       const a = getCellValue(thermo.cells[i]), b = getCellValue(thermo.cells[i+1]);
       if (a && b && a >= b) { conflicts.add(thermo.cells[i]); conflicts.add(thermo.cells[i+1]); }
     }
+    // Gap-feasibility check: between two filled cells at positions lastIdx and i
+    // (with values lastVal and v), we need (i - lastIdx) cells strictly between
+    // them — but more importantly, we need (i - lastIdx) DISTINCT strictly-
+    // increasing integers in (lastVal, v]. The number of distinct integers
+    // strictly greater than lastVal and ≤ v is (v - lastVal). For the run to be
+    // feasible we therefore need (v - lastVal) >= (i - lastIdx); a STRICTLY
+    // smaller value means the gap can't fit, so this is a conflict.
+    //
+    // NOTE: the test must be STRICT `<` (not `<=`). With `<=`, every adjacent
+    // filled pair (i - lastIdx === 1) where the values differ by exactly 1
+    // (the most common Thermo case, e.g. 1→2, 2→3, …) would be flagged as a
+    // conflict — breaking the entire Thermo variant in live play.
     let lastIdx = -1, lastVal = 0;
     for (let i = 0; i < thermo.cells.length; i++) {
       const v = getCellValue(thermo.cells[i]);
       if (!v) continue;
-      if (lastIdx >= 0 && v - lastVal <= i - lastIdx) { conflicts.add(thermo.cells[lastIdx]); conflicts.add(thermo.cells[i]); }
+      if (lastIdx >= 0 && v - lastVal < i - lastIdx) { conflicts.add(thermo.cells[lastIdx]); conflicts.add(thermo.cells[i]); }
       lastIdx = i; lastVal = v;
     }
     return { valid: conflicts.size === 0, conflicts };
@@ -1735,94 +2166,547 @@ SZ.VariantEngine = {
   },
 
   /** Render Killer cage borders and sum labels as SVG.
-   *  Cages whose cells are all already correctly filled are skipped
-   *  entirely — a solved cage's sum/border no longer helps the player
-   *  deduce anything, so leaving it drawn is just clutter on the board. */
+   *  Uses boundary tracing to draw each cage as a single continuous
+   *  outline with inset, rounded corners, and subtle dashed styling.
+   *  Solved cages fade out via CSS transition on the <g> group opacity.
+   *  Cage perimeter paths are cached for performance. */
   renderKillerSVG(svg, cages, N, cw, ch, cssVar) {
-    const cellToCage = new Array(N * N).fill(-1);
+    const INSET = 2;
+    const CORNER_RADIUS = 3;
     const cageColor = SZ.Constraints.getCageColorMap(cages, N);
-    const cageSolved = cages.map(c => c.cells.every(idx => SZ.state.userGrid[idx] === SZ.state.solution[idx]));
-    cages.forEach((c, ci) => {
-      c.cells.forEach(idx => cellToCage[idx] = ci);
-    });
-    cages.forEach((c, ci) => {
-      if (cageSolved[ci]) return;
-      const first = Math.min(...c.cells);
-      const r = Math.floor(first / N), col = first % N;
-      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-      label.setAttribute('x', col * cw + 3);
-      label.setAttribute('y', r * ch + 11);
-      label.setAttribute('font-size', Math.max(8, cw * 0.18));
-      label.setAttribute('font-weight', '700');
-      label.setAttribute('fill', cageColor[ci]);
-      label.setAttribute('font-family', 'DM Sans, sans-serif');
-      label.setAttribute('pointer-events', 'none');
-      label.textContent = c.sum;
-      svg.appendChild(label);
-    });
-    for (let r = 0; r < N; r++) {
-      for (let c = 0; c < N; c++) {
-        const idx = r * N + c, ci = cellToCage[idx];
-        if (ci < 0 || cageSolved[ci]) continue;
-        if (c < N - 1 && cellToCage[idx + 1] !== ci) {
-          const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-          line.setAttribute('x1', (c+1)*cw); line.setAttribute('y1', r*ch);
-          line.setAttribute('x2', (c+1)*cw); line.setAttribute('y2', (r+1)*ch);
-          line.setAttribute('stroke', cageColor[ci] || cssVar('--box-border'));
-          line.setAttribute('stroke-width', '2.5');
-          line.setAttribute('stroke-dasharray', '4,3');
-          svg.appendChild(line);
-        }
-        if (r < N - 1 && cellToCage[idx + N] !== ci) {
-          const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-          line.setAttribute('x1', c*cw); line.setAttribute('y1', (r+1)*ch);
-          line.setAttribute('x2', (c+1)*cw); line.setAttribute('y2', (r+1)*ch);
-          line.setAttribute('stroke', cageColor[ci] || cssVar('--box-border'));
-          line.setAttribute('stroke-width', '2.5');
-          line.setAttribute('stroke-dasharray', '4,3');
-          svg.appendChild(line);
+    const cageSolved = cages.map(c =>
+      c.cells.every(idx => SZ.state.userGrid[idx] === SZ.state.solution[idx])
+    );
+
+    // Cache perimeters (grid-coordinate topology never changes during gameplay)
+    const cageSig = cages.map(c => c.cells.join(',')).join('|');
+    if (!this._cagePerimCache || this._cagePerimCache.N !== N ||
+        this._cagePerimCache.sig !== cageSig) {
+      this._cagePerimCache = {
+        N,
+        sig: cageSig,
+        perimeters: cages.map(c => this._traceCagePerimeter(c.cells, N))
+      };
+    }
+
+    cages.forEach((cage, ci) => {
+      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      g.setAttribute('class', 'cage-group' + (cageSolved[ci] ? ' solved' : ''));
+      g.setAttribute('data-cage-idx', String(ci));
+
+      // Cage border path
+      const perimeter = this._cagePerimCache.perimeters[ci];
+      if (perimeter && perimeter.length >= 3) {
+        const simplified = this._simplifyPerimeter(perimeter);
+        const pathData = this._perimeterToSVGPath(simplified, cw, ch, INSET, CORNER_RADIUS);
+        if (pathData) {
+          const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+          path.setAttribute('d', pathData);
+          path.setAttribute('fill', 'none');
+          path.setAttribute('stroke', cageColor[ci]);
+          path.setAttribute('stroke-width', '1.5');
+          path.setAttribute('stroke-dasharray', '4,4');
+          path.setAttribute('stroke-linecap', 'round');
+          path.setAttribute('stroke-linejoin', 'round');
+          path.setAttribute('opacity', '0.78');
+          g.appendChild(path);
         }
       }
-    }
+
+      // Sum label (always present in DOM; hidden via group opacity when solved)
+      const first = Math.min(...cage.cells);
+      const lr = Math.floor(first / N), lc = first % N;
+      const isSingle = cage.cells.length === 1;
+      const fontSize = isSingle ? Math.max(6, cw * 0.13) : Math.max(8, cw * 0.18);
+      const pad = isSingle ? 2 : 4;
+      const lx = lc * cw + pad + INSET;
+      const ly = lr * ch + pad + INSET * 0.5;
+
+      // White halo for readability (drawn first, underneath)
+      const halo = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      halo.setAttribute('x', lx);
+      halo.setAttribute('y', ly);
+      halo.setAttribute('font-size', fontSize);
+      halo.setAttribute('font-weight', '700');
+      halo.setAttribute('font-family', 'DM Sans, sans-serif');
+      halo.setAttribute('fill', 'white');
+      halo.setAttribute('stroke', 'white');
+      halo.setAttribute('stroke-width', isSingle ? '2' : '3');
+      halo.setAttribute('class', 'cage-label-halo');
+      halo.setAttribute('pointer-events', 'none');
+      halo.textContent = cage.sum;
+      g.appendChild(halo);
+
+      // Colored label on top
+      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      label.setAttribute('x', lx);
+      label.setAttribute('y', ly);
+      label.setAttribute('font-size', fontSize);
+      label.setAttribute('font-weight', '700');
+      label.setAttribute('font-family', 'DM Sans, sans-serif');
+      label.setAttribute('fill', cageColor[ci]);
+      label.setAttribute('pointer-events', 'none');
+      label.textContent = cage.sum;
+      g.appendChild(label);
+
+      svg.appendChild(g);
+    });
+
+    // Outer board frame (drawn last so it's on top)
     const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
     rect.setAttribute('x', '0'); rect.setAttribute('y', '0');
-    rect.setAttribute('width', N*cw); rect.setAttribute('height', N*ch);
+    rect.setAttribute('width', N * cw); rect.setAttribute('height', N * ch);
     rect.setAttribute('fill', 'none');
     rect.setAttribute('stroke', cssVar('--box-border') || '#555');
     rect.setAttribute('stroke-width', '3');
     svg.appendChild(rect);
   },
 
-  /** Render Thermo bulbs and tubes as SVG. */
+  /** Trace the outer perimeter of a cage as a closed polygon.
+   *  Returns array of [gc, gr] grid-coordinate vertices in order,
+   *  or null if the cage is empty / degenerate.
+   *  Algorithm: collect all directed boundary edges (with cage interior
+   *  on the right in screen coords), then chain them into a closed loop. */
+  _traceCagePerimeter(cageCells, N) {
+    if (!cageCells || cageCells.length === 0) return null;
+    const cellSet = new Set(cageCells);
+
+    // Collect directed boundary edges — interior is always on the RIGHT
+    // of the walking direction (screen coords where y increases downward).
+    // Right perpendicular of direction (dx,dy) is (-dy,dx).
+    // Edge map: "gc,gr" → [[to_gc, to_gr], ...]
+    const edgeMap = Object.create(null);
+
+    const addEdge = (fromGC, fromGR, toGC, toGR) => {
+      const key = fromGC + ',' + fromGR;
+      if (!edgeMap[key]) edgeMap[key] = [];
+      edgeMap[key].push([toGC, toGR]);
+    };
+
+    for (const idx of cageCells) {
+      const r = Math.floor(idx / N), c = idx % N;
+      const above = r > 0 ? (r - 1) * N + c : -1;
+      const below = r < N - 1 ? (r + 1) * N + c : -1;
+      const left  = c > 0 ? r * N + (c - 1) : -1;
+      const right = c < N - 1 ? r * N + (c + 1) : -1;
+
+      // Top edge: walk right (→), interior below → boundary if cell above not in cage
+      if (!cellSet.has(above)) addEdge(c, r, c + 1, r);
+      // Right edge: walk down (↓), interior left → boundary if cell right not in cage
+      if (!cellSet.has(right)) addEdge(c + 1, r, c + 1, r + 1);
+      // Bottom edge: walk left (←), interior above → boundary if cell below not in cage
+      if (!cellSet.has(below)) addEdge(c + 1, r + 1, c, r + 1);
+      // Left edge: walk up (↑), interior right → boundary if cell left not in cage
+      if (!cellSet.has(left))  addEdge(c, r + 1, c, r);
+    }
+
+    // Find a starting vertex (lexicographically smallest = topmost-leftmost)
+    const keys = Object.keys(edgeMap);
+    if (keys.length === 0) return null;
+    let startKey = keys[0];
+    for (const k of keys) {
+      if (k < startKey) startKey = k;
+    }
+
+    // Chain edges into a closed perimeter
+    const perimeter = [];
+    let curKey = startKey;
+    const maxSteps = cageCells.length * 4 + 4; // safety bound
+    let steps = 0;
+    do {
+      const parts = curKey.split(',');
+      perimeter.push([parseInt(parts[0], 10), parseInt(parts[1], 10)]);
+      const targets = edgeMap[curKey];
+      if (!targets || targets.length === 0) return null; // broken chain
+      const next = targets.shift();               // take one outgoing edge
+      curKey = next[0] + ',' + next[1];
+      if (++steps > maxSteps) return null;         // safety: infinite loop
+    } while (curKey !== startKey);
+
+    return perimeter.length >= 4 ? perimeter : null;
+  },
+
+  /** Remove collinear vertices from a perimeter (keep only actual corners
+   *  where the direction changes). This simplifies the SVG path and avoids
+   *  degenerate corners on straight edges. */
+  _simplifyPerimeter(perimeter) {
+    if (!perimeter || perimeter.length < 4) return perimeter;
+    const result = [];
+    const n = perimeter.length;
+    for (let i = 0; i < n; i++) {
+      const prev = perimeter[(i - 1 + n) % n];
+      const curr = perimeter[i];
+      const next = perimeter[(i + 1) % n];
+      // Cross product of (curr-prev) × (next-curr) — zero means collinear
+      const dx1 = curr[0] - prev[0], dy1 = curr[1] - prev[1];
+      const dx2 = next[0] - curr[0], dy2 = next[1] - curr[1];
+      const cross = dx1 * dy2 - dy1 * dx2;
+      if (cross !== 0) result.push(curr);
+    }
+    return result.length >= 3 ? result : perimeter; // fallback if over-simplified
+  },
+
+  /** Convert a simplified perimeter (grid coords, corners only) to an SVG
+   *  path string with inset offset and quadratic-bezier rounded corners.
+   *
+   *  Inset calculation for axis-aligned edges:
+   *    The inward normal (right perpendicular in screen coords) of direction
+   *    (dx, dy) is (-dy, dx). The offset pushes each edge inward by `inset`.
+   *    At each corner, the inset vertex is the intersection of the two
+   *    offset lines from the incoming and outgoing edges.
+   *
+   *  Corner rounding:
+   *    At each inset corner, a quadratic bezier (Q) is drawn instead of a
+   *    sharp angle, with the original inset vertex as the control point and
+   *    endpoints `cornerRadius` pixels back along each edge. */
+  _perimeterToSVGPath(perimeter, cw, ch, inset, cornerRadius) {
+    if (!perimeter || perimeter.length < 3) return '';
+    const n = perimeter.length;
+
+    // 1. Convert grid coords to pixel coords
+    const px = perimeter.map(([gc, gr]) => [gc * cw, gr * ch]);
+
+    // 2. Compute inset vertices
+    const iv = [];
+    for (let i = 0; i < n; i++) {
+      const prev = px[(i - 1 + n) % n];
+      const curr = px[i];
+      const next = px[(i + 1) % n];
+
+      // Incoming and outgoing direction vectors (normalized for consistent inset)
+      const rdxIn = curr[0] - prev[0], rdyIn = curr[1] - prev[1];
+      const rdxOut = next[0] - curr[0], rdyOut = next[1] - curr[1];
+      const lenIn = Math.max(Math.sqrt(rdxIn * rdxIn + rdyIn * rdyIn), 0.01);
+      const lenOut = Math.max(Math.sqrt(rdxOut * rdxOut + rdyOut * rdyOut), 0.01);
+      const dxIn = rdxIn / lenIn, dyIn = rdyIn / lenIn;
+      const dxOut = rdxOut / lenOut, dyOut = rdyOut / lenOut;
+
+      // Inward offsets (right perpendicular of unit direction: -dy, dx) * inset
+      const inOffX  = -dyIn  * inset, inOffY  = dxIn  * inset;
+      const outOffX = -dyOut * inset, outOffY = dxOut * inset;
+
+      // Intersection of the two offset lines gives the inset vertex.
+      // For axis-aligned edges, one line constrains x, the other y.
+      // Use epsilon comparison since normalized values may not be exactly 0 or 1.
+      const eps = 0.001;
+      const inHoriz  = Math.abs(dyIn)  < eps;   // incoming edge is horizontal
+      const inVert   = Math.abs(dxIn)  < eps;   // incoming edge is vertical
+      const outHoriz = Math.abs(dyOut) < eps;
+      const outVert  = Math.abs(dxOut) < eps;
+      let ix, iy;
+      if (inHoriz && outHoriz) {
+        // Both horizontal (shouldn't happen after simplification)
+        ix = curr[0]; iy = curr[1] + inOffY;
+      } else if (inVert && outVert) {
+        // Both vertical
+        ix = curr[0] + inOffX; iy = curr[1];
+      } else if (inHoriz) {
+        // Incoming horizontal → gives y; outgoing vertical → gives x
+        ix = curr[0] + outOffX;
+        iy = curr[1] + inOffY;
+      } else {
+        // Incoming vertical → gives x; outgoing horizontal → gives y
+        ix = curr[0] + inOffX;
+        iy = curr[1] + outOffY;
+      }
+      iv.push([ix, iy]);
+    }
+
+    // 3. Build SVG path with rounded corners (quadratic bezier)
+    const cr = Math.min(cornerRadius, inset);
+    let d = '';
+
+    for (let i = 0; i < n; i++) {
+      const curr = iv[i];
+      const next = iv[(i + 1) % n];
+      const prev = iv[(i - 1 + n) % n];
+
+      const dx1 = curr[0] - prev[0], dy1 = curr[1] - prev[1];
+      const len1 = Math.max(Math.sqrt(dx1 * dx1 + dy1 * dy1), 0.01);
+      const dx2 = next[0] - curr[0], dy2 = next[1] - curr[1];
+      const len2 = Math.max(Math.sqrt(dx2 * dx2 + dy2 * dy2), 0.01);
+
+      // Cross product detects direction change (corner vs straight)
+      const cross = dx1 * dy2 - dy1 * dx2;
+      const isCorner = Math.abs(cross) > 0.01;
+      const canRound = isCorner && len1 > cr && len2 > cr;
+
+      if (i === 0) {
+        if (canRound) {
+          // Start just before the first corner (on the incoming edge)
+          const sx = curr[0] - (dx1 / len1) * cr;
+          const sy = curr[1] - (dy1 / len1) * cr;
+          d += 'M ' + sx.toFixed(2) + ' ' + sy.toFixed(2) + ' ';
+          // Quadratic bezier around the first corner
+          const ax = curr[0] + (dx2 / len2) * cr;
+          const ay = curr[1] + (dy2 / len2) * cr;
+          d += 'Q ' + curr[0].toFixed(2) + ' ' + curr[1].toFixed(2) + ' '
+             + ax.toFixed(2) + ' ' + ay.toFixed(2) + ' ';
+        } else {
+          d += 'M ' + curr[0].toFixed(2) + ' ' + curr[1].toFixed(2) + ' ';
+        }
+      } else if (canRound) {
+        // Line to just before corner, then quadratic bezier around it
+        const bx = curr[0] - (dx1 / len1) * cr;
+        const by = curr[1] - (dy1 / len1) * cr;
+        const ax = curr[0] + (dx2 / len2) * cr;
+        const ay = curr[1] + (dy2 / len2) * cr;
+        d += 'L ' + bx.toFixed(2) + ' ' + by.toFixed(2) + ' ';
+        d += 'Q ' + curr[0].toFixed(2) + ' ' + curr[1].toFixed(2) + ' '
+           + ax.toFixed(2) + ' ' + ay.toFixed(2) + ' ';
+      } else {
+        d += 'L ' + curr[0].toFixed(2) + ' ' + curr[1].toFixed(2) + ' ';
+      }
+    }
+
+    d += 'Z';
+    return d;
+  },
+
+  
+
+  /** Per-instance hue-rotation applied to each arrow/thermo so that when a
+   *  puzzle has several of them (especially overlapping/branching ones at
+   *  higher difficulty), each one reads as visually distinct rather than a
+   *  tangle of identically-colored lines. Index 0 keeps the mode's true accent. */
+  _VARIANT_HUE_STEPS: [0, 42, -42, 84, -84, 126, -126],
+
+  /** Build a rounded-corner SVG path `d` string through an open polyline.
+   *  Straight runs stay straight; at each interior bend a quadratic bezier
+   *  replaces the sharp elbow so arrow/thermo paths read as one continuous
+   *  stroke instead of a chain of ruler-straight segments. */
+  _smoothOpenPath(pts, radius) {
+    const n = pts.length;
+    if (n < 2) return '';
+    if (n === 2) {
+      return `M ${pts[0].x.toFixed(2)} ${pts[0].y.toFixed(2)} L ${pts[1].x.toFixed(2)} ${pts[1].y.toFixed(2)}`;
+    }
+    let d = `M ${pts[0].x.toFixed(2)} ${pts[0].y.toFixed(2)} `;
+    for (let i = 1; i < n - 1; i++) {
+      const prev = pts[i - 1], curr = pts[i], next = pts[i + 1];
+      const dx1 = curr.x - prev.x, dy1 = curr.y - prev.y;
+      const len1 = Math.max(Math.hypot(dx1, dy1), 0.01);
+      const dx2 = next.x - curr.x, dy2 = next.y - curr.y;
+      const len2 = Math.max(Math.hypot(dx2, dy2), 0.01);
+      const cr = Math.min(radius, len1 / 2, len2 / 2);
+      const bx = curr.x - (dx1 / len1) * cr, by = curr.y - (dy1 / len1) * cr;
+      const ax = curr.x + (dx2 / len2) * cr, ay = curr.y + (dy2 / len2) * cr;
+      d += `L ${bx.toFixed(2)} ${by.toFixed(2)} Q ${curr.x.toFixed(2)} ${curr.y.toFixed(2)} ${ax.toFixed(2)} ${ay.toFixed(2)} `;
+    }
+    const last = pts[n - 1];
+    d += `L ${last.x.toFixed(2)} ${last.y.toFixed(2)}`;
+    return d;
+  },
+
+  /** Render Thermo bulbs and tubes as SVG.
+   *  Polished look: layered "mercury-in-glass" tube (halo → body → inner highlight),
+   *  bulb rendered as a 3D glass orb (radial gradient + rim + drop shadow + specular spot).
+   *  Logic is unchanged — only visual treatment of the existing geometry.
+   *
+   *  Transparency is intentionally high so that pencil marks and cell values
+   *  underneath remain easy to read.
+   *
+   *  When two or more thermometers share one or more cells, each overlapping
+   *  thermometer is shifted slightly perpendicular to its own local direction
+   *  of travel, with a small consistent gap, so the tubes never visually merge
+   *  and each thermometer stays clearly distinguishable. */
   renderThermoSVG(svg, thermos, N, cw, ch, cssVar) {
-    const accent = cssVar('--accent');
-    thermos.forEach(thermo => {
+    const NS = 'http://www.w3.org/2000/svg';
+    const accent    = cssVar('--accent');
+    const accentDim = cssVar('--accent-dim') || accent;
+
+    // ── Defs: bulb radial gradient + soft drop-shadow filter ────────────
+    let defs = svg.querySelector('defs');
+    if (!defs) { defs = document.createElementNS(NS, 'defs'); svg.appendChild(defs); }
+    defs.querySelectorAll('[id^="thermo-"]').forEach(el => el.remove());
+
+    const bulbGrad = document.createElementNS(NS, 'radialGradient');
+    bulbGrad.setAttribute('id', 'thermo-bulb-grad');
+    bulbGrad.setAttribute('cx', '35%');
+    bulbGrad.setAttribute('cy', '30%');
+    bulbGrad.setAttribute('r', '75%');
+    // Lower opacity stops — the bulb should tint the cell, not occlude it.
+    [
+      ['0%',   '0.45'],
+      ['65%',  '0.28'],
+      ['100%', '0.16']
+    ].forEach(([off, op]) => {
+      const s = document.createElementNS(NS, 'stop');
+      s.setAttribute('offset', off);
+      s.setAttribute('stop-color', accent);
+      s.setAttribute('stop-opacity', op);
+      bulbGrad.appendChild(s);
+    });
+    defs.appendChild(bulbGrad);
+
+    const shadow = document.createElementNS(NS, 'filter');
+    shadow.setAttribute('id', 'thermo-shadow');
+    shadow.setAttribute('x', '-50%'); shadow.setAttribute('y', '-50%');
+    shadow.setAttribute('width', '200%'); shadow.setAttribute('height', '200%');
+    const fe = document.createElementNS(NS, 'feDropShadow');
+    fe.setAttribute('dx', '0'); fe.setAttribute('dy', '0.6');
+    fe.setAttribute('stdDeviation', '1.2');
+    fe.setAttribute('flood-color', accent);
+    fe.setAttribute('flood-opacity', '0.28');
+    shadow.appendChild(fe);
+    defs.appendChild(shadow);
+
+    // ── Geometry constants (scale gracefully with cell size) ────────────
+    const tubeWHalo  = Math.max(7,  cw * 0.20);
+    const tubeWBody  = Math.max(4,  cw * 0.11);
+    const tubeWInner = Math.max(1.5, cw * 0.05);
+    const bulbR      = cw * 0.36;
+    // Per-thermo perpendicular offset used when paths share cells. Kept small
+    // so the tube still appears to pass through the cell center cluster, but
+    // large enough to leave a visible gap between overlapping tubes.
+    const overlapGap = cw * 0.12;
+
+    // ── Detect overlap: which thermometers share cells with which? ──────
+    //  For each thermo, we compute a signed side (+1 or -1). When two thermos
+    //  share a cell, they get opposite signs so their perpendicular offsets
+    //  push them apart. We use a small graph-coloring pass: process thermos
+    //  in order, and assign each thermo a sign opposite to the first thermo
+    //  it overlaps with that already has a sign. (Two-coloring is sufficient
+    //  here because we only need to separate PAIRS of overlapping tubes —
+    //  three+ mutually-overlapping thermos are essentially never generated.)
+    const cellOwners = new Map(); // cellIdx -> [thermoIdx, ...]
+    thermos.forEach((t, ti) => {
+      for (const c of t.cells) {
+        if (!cellOwners.has(c)) cellOwners.set(c, []);
+        cellOwners.get(c).push(ti);
+      }
+    });
+    const overlapSet = new Set(); // thermo indices that overlap with at least one other
+    for (const [, owners] of cellOwners) {
+      if (owners.length > 1) owners.forEach(i => overlapSet.add(i));
+    }
+    const signOf = new Array(thermos.length).fill(0);
+    for (let ti = 0; ti < thermos.length; ti++) {
+      if (!overlapSet.has(ti)) continue;
+      // Find the first overlapping thermo that already has a sign; pick the
+      // opposite. If none has a sign yet, default to +1.
+      let sign = +1;
+      const myCells = new Set(thermos[ti].cells);
+      for (let tj = 0; tj < thermos.length; tj++) {
+        if (tj === ti) continue;
+        if (signOf[tj] === 0) continue;
+        if (thermos[tj].cells.some(c => myCells.has(c))) { sign = -signOf[tj]; break; }
+      }
+      signOf[ti] = sign;
+    }
+
+    thermos.forEach((thermo, ti) => {
       const cells = thermo.cells;
       if (cells.length < 2) return;
       const pts = cells.map(idx => {
         const r = Math.floor(idx / N), c = idx % N;
         return { x: c*cw+cw/2, y: r*ch+ch/2 };
       });
-      for (let i = 0; i < pts.length-1; i++) {
-        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        line.setAttribute('x1', pts[i].x); line.setAttribute('y1', pts[i].y);
-        line.setAttribute('x2', pts[i+1].x); line.setAttribute('y2', pts[i+1].y);
-        line.setAttribute('stroke', accent); line.setAttribute('stroke-width', '3');
-        line.setAttribute('stroke-linecap', 'round'); line.setAttribute('opacity', '0.45');
-        svg.appendChild(line);
+
+      // ── Apply perpendicular offset when this thermo overlaps another ──
+      //  Direction at point i is taken from the segment (prev → next), so
+      //  the offset is continuous along straight runs and only bends at
+      //  elbows — exactly where the eye expects the tube to turn.
+      let offsetPts = pts;
+      const sign = signOf[ti];
+      if (sign !== 0) {
+        offsetPts = pts.map((p, i) => {
+          const prev = pts[i - 1] || pts[i];
+          const next = pts[i + 1] || pts[i];
+          const dx = next.x - prev.x;
+          const dy = next.y - prev.y;
+          const len = Math.hypot(dx, dy) || 1;
+          // Unit perpendicular (rotate 90° CCW)
+          const nx = -dy / len;
+          const ny =  dx / len;
+          return { x: p.x + nx * overlapGap * sign, y: p.y + ny * overlapGap * sign };
+        });
       }
-      const bulb = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-      bulb.setAttribute('cx', pts[0].x); bulb.setAttribute('cy', pts[0].y);
-      bulb.setAttribute('r', cw*0.35); bulb.setAttribute('fill', accent);
-      bulb.setAttribute('opacity', '0.18');
-      svg.appendChild(bulb);
-      const last = pts[pts.length-1];
-      const tip = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-      tip.setAttribute('cx', last.x); tip.setAttribute('cy', last.y);
-      tip.setAttribute('r', cw*0.30); tip.setAttribute('fill', 'none');
-      tip.setAttribute('stroke', accent); tip.setAttribute('stroke-width', '2');
-      tip.setAttribute('opacity', '0.5');
-      svg.appendChild(tip);
+      const renderPts = offsetPts;
+
+      // Each thermometer gets its own group so a hue-rotate filter can set it
+      // apart from the others — important once overlapping tubes appear at
+      // higher difficulties and several are on screen at once.
+      const g = document.createElementNS(NS, 'g');
+      const hue = this._VARIANT_HUE_STEPS[ti % this._VARIANT_HUE_STEPS.length];
+      if (hue) g.style.filter = `hue-rotate(${hue}deg)`;
+      svg.appendChild(g);
+
+      // Single rounded SVG path through every cell — lets us layer cleanly
+      // without seams, and reads as one smooth tube instead of sharp elbows.
+      const d = this._smoothOpenPath(renderPts, cw * 0.30);
+
+      // 1) Tube halo — soft outer glow that lifts the tube off the cells
+      const halo = document.createElementNS(NS, 'path');
+      halo.setAttribute('d', d);
+      halo.setAttribute('fill', 'none');
+      halo.setAttribute('stroke', accent);
+      halo.setAttribute('stroke-width', String(tubeWHalo));
+      halo.setAttribute('stroke-linecap', 'round');
+      halo.setAttribute('stroke-linejoin', 'round');
+      halo.setAttribute('opacity', '0.06');
+      g.appendChild(halo);
+
+      // 2) Tube body — the "glass" wall, semi-transparent so digits remain readable
+      const tube = document.createElementNS(NS, 'path');
+      tube.setAttribute('d', d);
+      tube.setAttribute('fill', 'none');
+      tube.setAttribute('stroke', accent);
+      tube.setAttribute('stroke-width', String(tubeWBody));
+      tube.setAttribute('stroke-linecap', 'round');
+      tube.setAttribute('stroke-linejoin', 'round');
+      tube.setAttribute('opacity', '0.18');
+      g.appendChild(tube);
+
+      // 3) Tube inner highlight — thin brighter core, reads as mercury inside glass
+      const inner = document.createElementNS(NS, 'path');
+      inner.setAttribute('d', d);
+      inner.setAttribute('fill', 'none');
+      inner.setAttribute('stroke', accentDim);
+      inner.setAttribute('stroke-width', String(tubeWInner));
+      inner.setAttribute('stroke-linecap', 'round');
+      inner.setAttribute('stroke-linejoin', 'round');
+      inner.setAttribute('opacity', '0.40');
+      g.appendChild(inner);
+
+      // 4) Bulb halo — warm glow behind the bulb, softens the edge
+      const bulbHalo = document.createElementNS(NS, 'circle');
+      bulbHalo.setAttribute('cx', renderPts[0].x);
+      bulbHalo.setAttribute('cy', renderPts[0].y);
+      bulbHalo.setAttribute('r', String(bulbR * 1.3));
+      bulbHalo.setAttribute('fill', accent);
+      bulbHalo.setAttribute('opacity', '0.07');
+      g.appendChild(bulbHalo);
+
+      // 5) Bulb body — radial-gradient-filled orb with soft drop shadow
+      const bulb = document.createElementNS(NS, 'circle');
+      bulb.setAttribute('cx', renderPts[0].x);
+      bulb.setAttribute('cy', renderPts[0].y);
+      bulb.setAttribute('r', String(bulbR));
+      bulb.setAttribute('fill', 'url(#thermo-bulb-grad)');
+      bulb.setAttribute('filter', 'url(#thermo-shadow)'); // hue handled by the parent <g>'s CSS filter
+      g.appendChild(bulb);
+
+      // 6) Bulb rim — crisp outline for definition against any cell color
+      const rim = document.createElementNS(NS, 'circle');
+      rim.setAttribute('cx', renderPts[0].x);
+      rim.setAttribute('cy', renderPts[0].y);
+      rim.setAttribute('r', String(bulbR));
+      rim.setAttribute('fill', 'none');
+      rim.setAttribute('stroke', accent);
+      rim.setAttribute('stroke-width', '1.5');
+      rim.setAttribute('opacity', '0.45');
+      g.appendChild(rim);
+
+      // 7) Specular highlight — small bright spot, gives the bulb its 3D feel
+      const hl = document.createElementNS(NS, 'ellipse');
+      hl.setAttribute('cx', renderPts[0].x - bulbR * 0.30);
+      hl.setAttribute('cy', renderPts[0].y - bulbR * 0.38);
+      hl.setAttribute('rx', String(bulbR * 0.30));
+      hl.setAttribute('ry', String(bulbR * 0.20));
+      hl.setAttribute('fill', '#ffffff');
+      hl.setAttribute('opacity', '0.30');
+      g.appendChild(hl);
     });
   },
 
@@ -1901,44 +2785,255 @@ SZ.VariantEngine = {
     return segs.join(' ');
   },
 
-  /** Render Arrow circles and paths as SVG (polyline + marker arrowhead). */
+  /** Render Arrow circles and paths as SVG (polyline + marker arrowhead).
+   *  Polished look: arrow shaft starts just outside the circle (no overlap),
+   *  layered shaft (halo → body), circle has subtle inner tint + crisp ring + soft glow,
+   *  larger sharper arrowhead marker.
+   *
+   *  Arrows never share cells (the generator guarantees this). When two
+   *  arrows run parallel through ADJACENT cells (e.g. side-by-side in the
+   *  same row or column), each is shifted slightly perpendicular to its
+   *  local travel direction, with a small consistent gap, so the shafts
+   *  stay visually distinct and the puzzle reads cleanly. */
   renderArrowSVG(svg, arrows, N, cw, ch, cssVar) {
+    const NS = 'http://www.w3.org/2000/svg';
     const accent2 = cssVar('--accent2');
+
+    // ── Defs: subtle circle tint gradient + polished arrowhead marker ────
     let defs = svg.querySelector('defs');
-    if (!defs) { defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs'); svg.appendChild(defs); }
-    let marker = defs.querySelector('#arrowhead');
-    if (!marker) {
-      marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
-      marker.setAttribute('id', 'arrowhead');
-      marker.setAttribute('markerWidth', '8'); marker.setAttribute('markerHeight', '6');
-      marker.setAttribute('refX', '8'); marker.setAttribute('refY', '3');
-      marker.setAttribute('orient', 'auto'); marker.setAttribute('markerUnits', 'userSpaceOnUse');
-      const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-      poly.setAttribute('points', '0 0, 8 3, 0 6');
-      poly.setAttribute('fill', accent2); poly.setAttribute('opacity', '0.6');
-      marker.appendChild(poly); defs.appendChild(marker);
+    if (!defs) { defs = document.createElementNS(NS, 'defs'); svg.appendChild(defs); }
+    defs.querySelectorAll('[id^="arrow-"]').forEach(el => el.remove());
+
+    // Soft radial tint inside the circle so it reads as a "container" for the total
+    const circleGrad = document.createElementNS(NS, 'radialGradient');
+    circleGrad.setAttribute('id', 'arrow-circle-grad');
+    circleGrad.setAttribute('cx', '50%');
+    circleGrad.setAttribute('cy', '50%');
+    circleGrad.setAttribute('r', '55%');
+    [
+      ['0%',   '0.16'],
+      ['100%', '0.04']
+    ].forEach(([off, op]) => {
+      const s = document.createElementNS(NS, 'stop');
+      s.setAttribute('offset', off);
+      s.setAttribute('stop-color', accent2);
+      s.setAttribute('stop-opacity', op);
+      circleGrad.appendChild(s);
+    });
+    defs.appendChild(circleGrad);
+
+    // Larger, sharper arrowhead — clean triangle anchored at its tip
+    const marker = document.createElementNS(NS, 'marker');
+    marker.setAttribute('id', 'arrowhead-polished');
+    marker.setAttribute('markerWidth', '12');
+    marker.setAttribute('markerHeight', '10');
+    marker.setAttribute('refX', '11');
+    marker.setAttribute('refY', '5');
+    marker.setAttribute('orient', 'auto');
+    marker.setAttribute('markerUnits', 'userSpaceOnUse');
+    const poly = document.createElementNS(NS, 'polygon');
+    poly.setAttribute('points', '0,0 11,5 0,10 3,5');
+    poly.setAttribute('fill', accent2);
+    poly.setAttribute('opacity', '0.85');
+    marker.appendChild(poly);
+    defs.appendChild(marker);
+
+    // ── Geometry constants (scale gracefully with cell size) ────────────
+    const circleR   = cw * 0.38;
+    const ringW     = Math.max(2,   cw * 0.06);
+    const pathWHalo = Math.max(5,   cw * 0.14);
+    const pathWBody = Math.max(2.5, cw * 0.07);
+    // Per-arrow perpendicular offset used when two arrows run parallel through
+    // adjacent cells. Kept small so each shaft still appears to pass through
+    // the center of its own cell, but large enough to leave a visible gap.
+    const parallelGap = cw * 0.13;
+
+    // ── Detect parallel runs between pairs of arrows ────────────────────
+    //  Two arrows "run parallel" when, for some pair of cells (one from each
+    //  arrow's path), the cells are board-neighbors AND the local travel
+    //  directions are (anti)parallel. We collect the set of arrows that have
+    //  at least one such parallel pair, and assign each a sign (+1 or -1)
+    //  via two-coloring so each pair is pushed to opposite sides of their
+    //  respective cells — leaving a small consistent gap between the shafts.
+    //
+    //  For each arrow we compute a single global sign (not per-segment): the
+    //  perpendicular offset is then applied along each segment's local
+    //  normal, which keeps the shaft straight (no kinks) while shifting the
+    //  whole run to one side.
+    const dirAt = (cells, i) => {
+      // Direction of travel at path index i (in cell-index space), as a unit
+      // vector in board coordinates. Uses prev/next neighbors so the result
+      // is continuous along straight runs.
+      const prev = cells[i - 1] ?? cells[i];
+      const next = cells[i + 1] ?? cells[i];
+      const pr = Math.floor(prev / N), pc = prev % N;
+      const nr = Math.floor(next / N), nc = next % N;
+      const dr = nr - pr, dc = nc - pc;
+      const len = Math.hypot(dr, dc) || 1;
+      return { dr: dr / len, dc: dc / len };
+    };
+    const isNeighbor = (a, b) => {
+      const ar = Math.floor(a / N), ac = a % N;
+      const br = Math.floor(b / N), bc = b % N;
+      return Math.abs(ar - br) + Math.abs(ac - bc) === 1;
+    };
+    const isAntiparallel = (d1, d2) => {
+      // Two directions are antiparallel if their dot product is ≤ -0.85
+      // (i.e. they point in opposite directions, allowing a small tolerance
+      // for non-grid-aligned travel — though arrow paths are grid-aligned).
+      return d1.dr * d2.dr + d1.dc * d2.dc <= -0.85;
+    };
+    const overlapsWith = new Map(); // ai -> Set<aj>
+    for (let i = 0; i < arrows.length; i++) {
+      const a = arrows[i];
+      if (!a.path || a.path.length === 0) continue;
+      for (let j = i + 1; j < arrows.length; j++) {
+        const b = arrows[j];
+        if (!b.path || b.path.length === 0) continue;
+        let parallelFound = false;
+        for (let pi = 0; pi < a.path.length && !parallelFound; pi++) {
+          const di = dirAt(a.path, pi);
+          for (let pj = 0; pj < b.path.length; pj++) {
+            if (!isNeighbor(a.path[pi], b.path[pj])) continue;
+            const dj = dirAt(b.path, pj);
+            if (isAntiparallel(di, dj) || (di.dr * dj.dr + di.dc * dj.dc >= 0.85)) {
+              // Parallel OR antiparallel — both look like adjacent parallel
+              // shafts to the eye when they run side-by-side in the same row
+              // or column. Offset them.
+              parallelFound = true;
+              break;
+            }
+          }
+        }
+        if (parallelFound) {
+          if (!overlapsWith.has(i)) overlapsWith.set(i, new Set());
+          if (!overlapsWith.has(j)) overlapsWith.set(j, new Set());
+          overlapsWith.get(i).add(j);
+          overlapsWith.get(j).add(i);
+        }
+      }
     }
-    arrows.forEach(arrow => {
+    // Two-coloring: greedily assign signs so every overlapping pair gets
+    // opposite signs. BFS over the overlap graph.
+    const signOf = new Array(arrows.length).fill(0);
+    for (let i = 0; i < arrows.length; i++) {
+      if (signOf[i] !== 0) continue;
+      if (!overlapsWith.has(i)) continue; // no parallel partner — leave at 0
+      // BFS from this node
+      const queue = [i];
+      signOf[i] = +1;
+      while (queue.length > 0) {
+        const u = queue.shift();
+        for (const v of overlapsWith.get(u)) {
+          if (signOf[v] === 0) {
+            signOf[v] = -signOf[u];
+            queue.push(v);
+          }
+        }
+      }
+    }
+
+    arrows.forEach((arrow, ai) => {
       if (arrow.path.length < 1) return;
       const cr = Math.floor(arrow.circle / N), cc = arrow.circle % N;
       const cx = cc*cw+cw/2, cy = cr*ch+ch/2;
       const pathPts = arrow.path.map(pi => {
         const r = Math.floor(pi / N), c = pi % N;
-        return `${c*cw+cw/2},${r*ch+ch/2}`;
+        return { x: c*cw+cw/2, y: r*ch+ch/2 };
       });
-      const polyline = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
-      polyline.setAttribute('points', `${cx},${cy} ` + pathPts.join(' '));
-      polyline.setAttribute('fill', 'none'); polyline.setAttribute('stroke', accent2);
-      polyline.setAttribute('stroke-width', '2.5'); polyline.setAttribute('stroke-linecap', 'round');
-      polyline.setAttribute('stroke-linejoin', 'round'); polyline.setAttribute('opacity', '0.5');
-      polyline.setAttribute('marker-end', 'url(#arrowhead)');
-      svg.appendChild(polyline);
-      const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-      circle.setAttribute('cx', cx); circle.setAttribute('cy', cy);
-      circle.setAttribute('r', cw*0.38); circle.setAttribute('fill', 'none');
-      circle.setAttribute('stroke', accent2); circle.setAttribute('stroke-width', '2.5');
-      circle.setAttribute('opacity', '0.5');
-      svg.appendChild(circle);
+
+      // ── Apply perpendicular offset when this arrow runs parallel to ──
+      //  another through adjacent cells. Each point is shifted along the
+      //  perpendicular to the LOCAL travel direction at that point, so a
+      //  straight horizontal run slides sideways, a vertical run slides
+      //  up/down, and bends stay smooth.
+      const sign = signOf[ai];
+      let renderPts = pathPts;
+      if (sign !== 0) {
+        renderPts = pathPts.map((p, i) => {
+          const prev = pathPts[i - 1] || pathPts[i];
+          const next = pathPts[i + 1] || pathPts[i];
+          const dx = next.x - prev.x;
+          const dy = next.y - prev.y;
+          const len = Math.hypot(dx, dy) || 1;
+          // Unit perpendicular (rotate 90° CCW)
+          const nx = -dy / len;
+          const ny =  dx / len;
+          return { x: p.x + nx * parallelGap * sign, y: p.y + ny * parallelGap * sign };
+        });
+      }
+
+      // Each arrow gets its own group so a hue-rotate filter can set it apart
+      // from the others — important once multiple arrows are on screen at once.
+      const g = document.createElementNS(NS, 'g');
+      const hue = this._VARIANT_HUE_STEPS[ai % this._VARIANT_HUE_STEPS.length];
+      if (hue) g.style.filter = `hue-rotate(${hue}deg)`;
+      svg.appendChild(g);
+
+      // Compute the start point so the shaft begins just outside the circle,
+      // in the direction of the first path cell — this eliminates the visual
+      // overlap where the line used to poke into the circle.
+      const first = renderPts[0];
+      const dx = first.x - cx, dy = first.y - cy;
+      const dist = Math.hypot(dx, dy) || 1;
+      const ux = dx / dist, uy = dy / dist;
+      const startX = cx + ux * (circleR + 1);
+      const startY = cy + uy * (circleR + 1);
+
+      // Build the shaft as a single rounded SVG path (smooths bends in
+      // multi-cell arrows instead of showing sharp elbows)
+      const d = this._smoothOpenPath([{ x: startX, y: startY }, ...renderPts], cw * 0.26);
+
+      // 1) Shaft halo — soft glow that lifts the line off the cells
+      const halo = document.createElementNS(NS, 'path');
+      halo.setAttribute('d', d);
+      halo.setAttribute('fill', 'none');
+      halo.setAttribute('stroke', accent2);
+      halo.setAttribute('stroke-width', String(pathWHalo));
+      halo.setAttribute('stroke-linecap', 'round');
+      halo.setAttribute('stroke-linejoin', 'round');
+      halo.setAttribute('opacity', '0.08');
+      g.appendChild(halo);
+
+      // 2) Shaft body — main arrow line with the polished arrowhead at the tip
+      const shaft = document.createElementNS(NS, 'path');
+      shaft.setAttribute('d', d);
+      shaft.setAttribute('fill', 'none');
+      shaft.setAttribute('stroke', accent2);
+      shaft.setAttribute('stroke-width', String(pathWBody));
+      shaft.setAttribute('stroke-linecap', 'round');
+      shaft.setAttribute('stroke-linejoin', 'round');
+      shaft.setAttribute('opacity', '0.65');
+      shaft.setAttribute('marker-end', 'url(#arrowhead-polished)');
+      g.appendChild(shaft);
+
+      // 3) Circle halo — soft glow behind the circle
+      const cHalo = document.createElementNS(NS, 'circle');
+      cHalo.setAttribute('cx', cx);
+      cHalo.setAttribute('cy', cy);
+      cHalo.setAttribute('r', String(circleR * 1.25));
+      cHalo.setAttribute('fill', accent2);
+      cHalo.setAttribute('opacity', '0.08');
+      g.appendChild(cHalo);
+
+      // 4) Circle fill — subtle radial tint (keeps the total cell visually distinct)
+      const cFill = document.createElementNS(NS, 'circle');
+      cFill.setAttribute('cx', cx);
+      cFill.setAttribute('cy', cy);
+      cFill.setAttribute('r', String(circleR));
+      cFill.setAttribute('fill', 'url(#arrow-circle-grad)');
+      g.appendChild(cFill);
+
+      // 5) Circle outline — crisp thicker ring for clear definition
+      const circle = document.createElementNS(NS, 'circle');
+      circle.setAttribute('cx', cx);
+      circle.setAttribute('cy', cy);
+      circle.setAttribute('r', String(circleR));
+      circle.setAttribute('fill', 'none');
+      circle.setAttribute('stroke', accent2);
+      circle.setAttribute('stroke-width', String(ringW));
+      circle.setAttribute('opacity', '0.85');
+      g.appendChild(circle);
     });
   }
 };
@@ -2657,41 +3752,106 @@ SZ.Constraints = {
     return { constraints: cages, regionMap: null };
   },
 
-  /** Generate thermometer data using a temp solution so paths are strictly increasing. */
-  generateThermometers(solution, state) {
+  /** Per-difficulty shape for Thermo generation. Higher tiers don't just shrink
+   *  the given-count — they grow longer tubes (more cells whose order has to be
+   *  inferred) and lower the odds of "obvious" +1 growth in favor of uneven
+   *  jumps (greedyBias), which forces harder range reasoning along the tube.
+   *
+   *  Standard Thermo Sudoku uses ONE bulb → ONE stem per thermometer. Branching
+   *  thermometers (one bulb, two tubes) are a non-standard variant and are not
+   *  generated here — every bulb has exactly one stem, so the player can always
+   *  read each thermometer as a single strictly-increasing sequence. */
+  _THERMO_TIERS: {
+    beginner: { count: 2, minLen: 3, maxLen: 4, greedyBias: 1.00 },
+    easy:     { count: 2, minLen: 3, maxLen: 5, greedyBias: 0.85 },
+    medium:   { count: 3, minLen: 4, maxLen: 6, greedyBias: 0.60 },
+    hard:     { count: 3, minLen: 5, maxLen: 7, greedyBias: 0.40 },
+    expert:   { count: 4, minLen: 5, maxLen: 7, greedyBias: 0.30 },
+    master:   { count: 4, minLen: 5, maxLen: 7, greedyBias: 0.25 },
+    extreme:  { count: 5, minLen: 5, maxLen: 7, greedyBias: 0.15 }
+  },
+
+  /** Generate thermometer data using a temp solution so paths are strictly increasing.
+   *  Shape (count/length/growth style) scales with difficulty so harder tiers
+   *  demand harder thermometer logic, not just fewer givens.
+   *
+   *  Each generated thermometer has exactly ONE bulb (cells[0]) and ONE stem
+   *  (the rest of `cells`). Branching tubes are never generated — see the
+   *  note on `_THERMO_TIERS` above. */
+  generateThermometers(solution, state, difficulty) {
     const N = state.size;
     if (N !== 9) { return { constraints: [], regionMap: null }; }
+    const tier = this._THERMO_TIERS[difficulty] || this._THERMO_TIERS.medium;
+
     const thermos = [];
     const occupied = new Set();
-    const maxThermos = 2 + Math.floor(Math.random() * 2);
 
-    for (let t = 0; t < maxThermos; t++) {
-      const avail = [...Array(N * N).keys()].filter(i => !occupied.has(i));
-      if (avail.length < 3) break;
-      // Start from a cell with low value (1-3), grow to higher values
-      const lowCells = avail.filter(i => solution[i] <= 3);
-      if (lowCells.length === 0) break;
-      const start = lowCells[Math.floor(Math.random() * lowCells.length)];
+    // Grow one tube from `start` via backtracking DFS: try a valid next cell,
+    // recurse, and backtrack out of dead ends instead of just stopping there.
+    // A pure greedy walk reliably dead-ends before reaching long targets (no
+    // way to undo a bad early choice), which made Hard+ tiers collapse back
+    // to trivial 2-cell thermos — this fixes that. `greedyBias` still trades
+    // "always pick the smallest valid next value" (obvious staircase) for
+    // "any valid neighbor" (uneven jumps, harder range reasoning) along the way.
+    const growArm = (start, targetLen, localOccupied) => {
+      let best = [start];
+      let nodes = 0;
+      const NODE_BUDGET = 600;
       const path = [start];
-      occupied.add(start);
-      const target = 3 + Math.floor(Math.random() * 3);
-      let curVal = solution[start];
-      while (path.length < target) {
+      localOccupied.add(start);
+      const dfs = () => {
+        if (path.length > best.length) best = path.slice();
+        if (path.length >= targetLen) return true;
+        if (nodes++ > NODE_BUDGET) return false;
         const last = path[path.length - 1];
         const r = Math.floor(last / N), c = last % N;
-        const ns = [[r-1,c],[r+1,c],[r,c-1],[r,c+1]]
+        const curVal = solution[last];
+        let cands = [[r-1,c],[r+1,c],[r,c-1],[r,c+1]]
           .filter(([rr,cc]) => rr>=0&&rr<N&&cc>=0&&cc<N)
           .map(([rr,cc]) => rr*N+cc)
-          .filter(i => !occupied.has(i) && solution[i] > curVal);
-        if (ns.length === 0) break;
-        // Sort by value ascending for consistent growth
-        ns.sort((a, b) => solution[a] - solution[b]);
-        const next = ns[0]; // Smallest value > curVal
-        path.push(next);
-        occupied.add(next);
-        curVal = solution[next];
+          .filter(i => !occupied.has(i) && !localOccupied.has(i) && solution[i] > curVal);
+        if (Math.random() < tier.greedyBias) {
+          cands.sort((a, b) => solution[a] - solution[b]);
+        } else {
+          for (let i = cands.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [cands[i], cands[j]] = [cands[j], cands[i]];
+          }
+        }
+        for (const next of cands) {
+          path.push(next); localOccupied.add(next);
+          if (dfs()) return true;
+          path.pop(); localOccupied.delete(next);
+        }
+        return false;
+      };
+      dfs();
+      return best;
+    };
+
+    for (let t = 0; t < tier.count; t++) {
+      // Retry with different bulbs/target lengths a few times before giving
+      // up this slot — a single random start cell is often a dead end.
+      let armA = null;
+      for (let attempt = 0; attempt < 14 && !armA; attempt++) {
+        const avail = [...Array(N * N).keys()].filter(i => !occupied.has(i));
+        if (avail.length < tier.minLen) break;
+        // Start from a cell with a low value, grow toward higher values
+        const lowCells = avail.filter(i => solution[i] <= 3);
+        if (lowCells.length === 0) break;
+        const start = lowCells[Math.floor(Math.random() * lowCells.length)];
+        const targetLen = tier.minLen + Math.floor(Math.random() * (tier.maxLen - tier.minLen + 1));
+        const cand = growArm(start, targetLen, new Set());
+        if (cand.length >= tier.minLen) armA = cand;
       }
-      if (path.length >= 3) thermos.push({ type: 'thermo', cells: path });
+      if (!armA) continue; // this slot couldn't find a long-enough tube — move on
+      armA.forEach(i => occupied.add(i));
+      thermos.push({ type: 'thermo', cells: armA });
+
+      // NOTE: Branching thermometers (a second tube growing out of the same
+      //  bulb) used to be generated here for Medium+ tiers. They are removed
+      //  because they violate the standard Thermo Sudoku rule of "one bulb,
+      //  one stem" — see _THERMO_TIERS above for the full rationale.
     }
 
     if (thermos.length === 0) {
@@ -2713,53 +3873,87 @@ SZ.Constraints = {
     return { constraints: thermos, regionMap: null };
   },
 
-  /** Generate arrow data from a temp solution: picks paths whose values sum to the circle's value. */
-  generateArrows(solution, state) {
+  /** Per-difficulty shape for Arrow generation. Higher tiers grow longer paths
+   *  (more addends to juggle per sum) and add more arrows — but arrows NEVER
+   *  share or cross cells. Overlapping arrows made the puzzle much harder to
+   *  read (a single cell visually carrying two arrow lines and belonging to
+   *  two different sum constraints), so every arrow's circle + path cells
+   *  are always exclusive. Difficulty scales via path length and arrow count
+   *  instead of via overlap. */
+  _ARROW_TIERS: {
+    beginner: { count: 2, minLen: 2, maxLen: 2 },
+    easy:     { count: 2, minLen: 2, maxLen: 3 },
+    medium:   { count: 3, minLen: 2, maxLen: 3 },
+    hard:     { count: 4, minLen: 2, maxLen: 4 },
+    expert:   { count: 5, minLen: 2, maxLen: 4 },
+    master:   { count: 5, minLen: 3, maxLen: 5 },
+    extreme:  { count: 6, minLen: 3, maxLen: 5 }
+  },
+
+  /** Generate arrow data from a temp solution: picks paths whose values sum to the
+   *  circle's value. Count/length scale with difficulty so harder tiers demand
+   *  harder arrow-sum logic, not just fewer givens. Arrows never overlap —
+   *  every circle and path cell is exclusive to a single arrow. */
+  generateArrows(solution, state, difficulty) {
     const N = state.size;
     if (N !== 9) { return { constraints: [], regionMap: null }; }
+    const tier = this._ARROW_TIERS[difficulty] || this._ARROW_TIERS.medium;
     const arrows = [];
-    const occupied = new Set();
+    // Every cell is exclusive to a single arrow — circles and path cells
+    // are never shared between arrows. This keeps each arrow visually
+    // distinct and the puzzle easy to read.
+    const usedAsCircle = new Set();
+    const usedAsPath = new Set();
     // Sort cells so we try larger values first (more chance of finding valid sums)
     const order = [...Array(N * N).keys()].sort((a, b) => solution[b] - solution[a]);
-    const maxArrows = 2 + Math.floor(Math.random() * 2); // 2-3 arrows
+    // BFS naturally finds shortest matches first; without this bias every tier
+    // would collapse toward 2-cell arrows even when maxLen allows more. Higher
+    // tiers weight the selection more strongly toward the longer matches found.
+    const lengthBias = tier.maxLen > tier.minLen ? 1.4 : 1;
 
     for (const circle of order) {
-      if (arrows.length >= maxArrows) break;
-      if (occupied.has(circle)) continue;
+      if (arrows.length >= tier.count) break;
+      if (usedAsCircle.has(circle) || usedAsPath.has(circle)) continue;
       const circVal = solution[circle];
-      if (circVal < 3) continue; // Need at least 2 path cells, min sum=1+2=3
+      if (circVal < tier.minLen) continue; // can't reach minLen distinct cells summing this low
 
-      // Find a connected path whose values sum to circVal
+      // Find every connected path whose values sum to circVal, with length in
+      // [minLen, maxLen] for this tier, then pick one — biased toward longer —
+      // rather than just taking the first (shortest) one BFS happens to find.
+      // Path cells must be unused (no overlap with any other arrow).
       const queue = [[circle, [], 0]];
       const visited = new Set([circle]);
-      let best = null;
-      while (queue.length > 0) {
+      const matches = [];
+      let iterations = 0;
+      while (queue.length > 0 && iterations++ < 400) {
         const [idx, path, sum] = queue.shift();
         const r = Math.floor(idx / N), c = idx % N;
         const neighbors = [[r-1,c],[r+1,c],[r,c-1],[r,c+1]]
           .filter(([rr,cc]) => rr>=0&&rr<N&&cc>=0&&cc<N)
           .map(([rr,cc]) => rr*N+cc)
-          .filter(i => !visited.has(i) && !occupied.has(i) && i !== circle);
+          .filter(i => !visited.has(i) && i !== circle && !usedAsCircle.has(i) && !usedAsPath.has(i));
         for (const ni of neighbors) {
           const ns = sum + solution[ni];
           if (ns > circVal) continue;
           const np = [...path, ni];
-          if (ns === circVal && np.length >= 2) {
-            best = { path: np };
-            queue.length = 0; // break out
-            break;
+          if (ns === circVal && np.length >= tier.minLen) {
+            matches.push(np);
+            if (matches.length >= 24) { queue.length = 0; break; }
           }
-          if (np.length < 4) {
+          if (np.length < tier.maxLen) {
             visited.add(ni);
             queue.push([ni, np, ns]);
           }
         }
       }
 
-      if (best) {
-        best.path.forEach(i => occupied.add(i));
-        occupied.add(circle);
-        arrows.push({ type: 'arrow', circle, path: best.path });
+      if (matches.length > 0) {
+        matches.sort((a, b) => b.length - a.length);
+        const pick = Math.min(matches.length - 1, Math.floor(Math.pow(Math.random(), lengthBias) * matches.length));
+        const best = matches[pick];
+        usedAsCircle.add(circle);
+        best.forEach(i => usedAsPath.add(i));
+        arrows.push({ type: 'arrow', circle, path: best });
       }
     }
 
@@ -2993,13 +4187,66 @@ SZ.Engine = {
   },
 
   /**
-   * Count solutions (up to limit) — used to verify uniqueness.
-   * PERF: uses a peer bitmask per cell (built ONCE per call) so each candidate
-   * check is O(1) instead of O(P). Combined with iterative left-to-right scan
-   * + early exit on `limit`, this is typically 5-10x faster than the original
-   * peer-array iteration, and scales acceptably to 16×16.
-   * A node budget prevents pathological cases from blocking the main thread.
+   * Constraint propagation pass: repeatedly fill in naked singles (cells
+   * with exactly one legal candidate) until no more can be deduced or a
+   * contradiction is hit. Returns a list of the cell indices it filled
+   * (so the caller can undo them after recursing), or null on contradiction.
+   *
+   * This is the standard "naked single" propagation pass used in every
+   * competitive sudoku solver. It dramatically reduces the number of
+   * backtracking nodes by pruning forced moves before the MRV scan runs,
+   * especially on 16×16 boards where a single placement can cascade into
+   * dozens of forced follow-ups.
+   *
+   * Cost per pass: O(total × P × N) in the worst case, but in practice
+   * most passes terminate in 2-3 iterations with very few cells filled.
+   * The early-exit on contradiction makes it net-faster than recursing
+   * into a doomed subtree.
+   *
+   * `work` is the board (mutated in place). `peers` is the precomputed
+   * peer list. `N` is the board size. `hasConstraints` toggles whether
+   * variant constraints (Killer / Arrow / Thermo) are checked in addition
+   * to peer conflicts via SZ.Constraints.checkPlacement.
    */
+  _propagateNakedSingles(work, peers, N, hasConstraints, state) {
+    const total = N * N;
+    const filled = []; // [{ idx, prev }] — every assignment we make, for undo
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (let i = 0; i < total; i++) {
+        if (work[i] !== 0) continue;
+        const ps = peers[i];
+        let usedMask = 0;
+        for (let k = 0; k < ps.length; k++) {
+          const v = work[ps[k]];
+          if (v) usedMask |= (1 << v);
+        }
+        // Find candidates.
+        let cand = 0;
+        let candCount = 0;
+        for (let n = 1; n <= N; n++) {
+          if (usedMask & (1 << n)) continue;
+          if (hasConstraints && !SZ.Constraints.checkPlacement(work, state, i, n)) continue;
+          cand = n;
+          if (++candCount > 1) break; // not a naked single — stop early
+        }
+        if (candCount === 0) {
+          // Contradiction: cell has no legal value. Undo our partial work
+          // and signal failure to the caller.
+          for (let k = filled.length - 1; k >= 0; k--) work[filled[k].idx] = filled[k].prev;
+          return null;
+        }
+        if (candCount === 1) {
+          filled.push({ idx: i, prev: work[i] });
+          work[i] = cand;
+          changed = true;
+        }
+      }
+    }
+    return filled;
+  },
+
   /**
    * Count up to `limit` distinct solutions for a partially-filled board.
    * PERF: uses the same MRV (fewest-candidates-first) cell ordering as
@@ -3009,6 +4256,12 @@ SZ.Engine = {
    * cutting the average node count per call compounds fast, and matters
    * most on larger boards (16×16) where a fixed scan order was the main
    * reason "harder" difficulties could take several seconds to generate.
+   *
+   * PERF (v2): each recursion now runs a naked-single constraint-
+   * propagation pass (see _propagateNakedSingles) BEFORE the MRV scan.
+   * This typically cuts node counts 3-10× on hard 16×16 puzzles, because
+   * forced follow-up placements are deduced in O(N×P) instead of being
+   * explored one backtrack-level at a time.
    */
   countSolutions(board, state, limit = 2, nodeBudget = 100000) {
     const N = state.size;
@@ -3020,9 +4273,30 @@ SZ.Engine = {
     let nodes = 0;
     const hasConstraints = state.constraints && state.constraints.length > 0;
 
+    // ── Fast pre-check: bail early if the board already has a direct peer ──
+    //  conflict. This catches the "two 1s in the same row" case before we
+    //  even enter the recursive solver, avoiding the node budget being
+    //  burned on a doomed search. Cost: O(total × P).
+    for (let i = 0; i < total; i++) {
+      const v = work[i];
+      if (!v) continue;
+      const ps = peers[i];
+      for (let k = 0; k < ps.length; k++) {
+        if (work[ps[k]] === v) return 0; // direct conflict — no solutions
+      }
+    }
+
     const solve = () => {
       if (count >= limit) return;
       if (++nodes > nodeBudget) return;
+
+      // ── Constraint propagation: fill all naked singles before MRV. ──
+      //  If a contradiction is found, this branch is dead — bail.
+      //  The propagated assignments are undone before returning so the
+      //  board is left in the same state the caller passed in.
+      const propagated = this._propagateNakedSingles(work, peers, N, hasConstraints, state);
+      if (propagated === null) return; // contradiction — dead branch
+      const propCount = propagated.length;
 
       // Find the empty cell with the fewest legal candidates (MRV).
       let bestIdx = -1, bestCands = null;
@@ -3040,7 +4314,11 @@ SZ.Engine = {
           if (hasConstraints && !SZ.Constraints.checkPlacement(work, state, i, n)) continue;
           cands.push(n);
         }
-        if (cands.length === 0) return; // dead cell — backtrack now
+        if (cands.length === 0) {
+          // Dead cell — undo propagation and bail.
+          for (let k = propCount - 1; k >= 0; k--) work[propagated[k].idx] = propagated[k].prev;
+          return;
+        }
         if (bestCands === null || cands.length < bestCands.length) {
           bestIdx = i; bestCands = cands;
           if (cands.length === 1) break; // a forced cell can't be beaten
@@ -3054,6 +4332,8 @@ SZ.Engine = {
         // the group is filled, so double-check with areAllSatisfied here,
         // same as the original implementation did.
         if (!hasConstraints || SZ.Constraints.areAllSatisfied(work, state.constraints)) count++;
+        // Undo propagation before returning.
+        for (let k = propCount - 1; k >= 0; k--) work[propagated[k].idx] = propagated[k].prev;
         return;
       }
 
@@ -3061,9 +4341,11 @@ SZ.Engine = {
         work[bestIdx] = n;
         solve();
         work[bestIdx] = 0;
-        if (count >= limit) return;
-        if (nodes > nodeBudget) return;
+        if (count >= limit) break;
+        if (nodes > nodeBudget) break;
       }
+      // Undo propagation before returning to the parent frame.
+      for (let k = propCount - 1; k >= 0; k--) work[propagated[k].idx] = propagated[k].prev;
     };
     solve();
     return count;
@@ -3082,7 +4364,45 @@ SZ.Engine = {
     const diff = SZ.Difficulties[difficulty] || SZ.Difficulties.medium;
     const targetRemove = Math.floor(total * diff.removeRatio);
     const puzzle = [...solution];
-    const order = this._shuffle([...Array(total).keys()]);
+
+    // For Arrow/Thermo, bias WHICH cells get attempted for removal first so
+    // difficulty scaling reflects how much the solver leans on the variant's
+    // own logic — not just the raw given-count. Lower tiers push circle/path
+    // (Arrow) or tube (Thermo) cells toward the back of the queue, so more of
+    // them survive as free givens and less arrow/thermo deduction is required.
+    // Hard+ tiers front-load those cells so they're the first ones removed,
+    // forcing the solver to actually use arrow-sum / thermometer-order logic.
+    let order;
+    if ((state.variant === 'arrow' || state.variant === 'thermo') && state.constraints && state.constraints.length) {
+      const variantSet = new Set();
+      // For Thermo, also collect bulb cells (cells[0]) — these MUST always be
+      // removed (never appear as givens), because a thermo whose bulb is a
+      // given static value provides no thermo-order deduction at all and just
+      // adds visual clutter. Bias them to the very front of the removal order.
+      const bulbSet = new Set();
+      for (const c of state.constraints) {
+        if (c.type === 'arrow') { variantSet.add(c.circle); c.path.forEach(i => variantSet.add(i)); }
+        else if (c.type === 'thermo') {
+          c.cells.forEach(i => variantSet.add(i));
+          if (c.cells.length > 0) bulbSet.add(c.cells[0]);
+        }
+      }
+      const bulbCells     = this._shuffle([...bulbSet]);
+      const otherVariant  = this._shuffle([...variantSet].filter(i => !bulbSet.has(i)));
+      const otherCells    = this._shuffle([...Array(total).keys()].filter(i => !variantSet.has(i)));
+      const TIER_RANK = { beginner: 0, easy: 1, medium: 2, hard: 3, expert: 4, master: 5, extreme: 6 };
+      const rank = TIER_RANK[difficulty] ?? 2;
+      // Bulbs always go FIRST so they're removed before anything else; the
+      // remaining variant cells follow the tier-based bias as before.
+      if (rank >= 3) {
+        order = [...bulbCells, ...otherVariant, ...otherCells];
+      } else {
+        order = [...bulbCells, ...otherCells, ...otherVariant];
+      }
+    } else {
+      order = this._shuffle([...Array(total).keys()]);
+    }
+
     let removed = 0;
     // Wall-clock budget — protects the main thread on slow devices / large boards.
     const deadline = (typeof performance !== 'undefined' ? performance.now() : Date.now()) + 3000;
@@ -3098,6 +4418,48 @@ SZ.Engine = {
         puzzle[idx] = backup;
       } else {
         removed++;
+      }
+    }
+
+    // ── Final cleanup: ensure NO thermo bulb survives as a given ─────────
+    //  Even with the front-loaded bias above, a bulb can survive as a given
+    //  when removing it would create multiple solutions (rare, but possible
+    //  on easier tiers where the thermo is short and the bulb value is also
+    //  pinned by a row/col/box constraint). In that case we try to remove
+    //  the bulb AND add back a different currently-removed non-bulb cell —
+    //  this preserves the puzzle's uniqueness and difficulty while still
+    //  freeing the bulb. If no compensation cell can be found, we leave the
+    //  bulb in place (extremely rare edge case; the puzzle stays solvable).
+    if (state.variant === 'thermo' && state.constraints && state.constraints.length) {
+      const bulbSet = new Set();
+      for (const c of state.constraints) {
+        if (c.type === 'thermo' && c.cells.length > 0) bulbSet.add(c.cells[0]);
+      }
+      for (const bulbIdx of bulbSet) {
+        if (puzzle[bulbIdx] === 0) continue; // already not a given — good
+        const backup = puzzle[bulbIdx];
+        puzzle[bulbIdx] = 0;
+        if (this.countSolutions(puzzle, state, 2) === 1) {
+          // Clean removal — puzzle stays unique. Done.
+          continue;
+        }
+        // Restoring uniqueness requires adding a different cell back.
+        // Try every non-bulb, currently-empty cell until one restores uniqueness.
+        let restored = false;
+        for (let i = 0; i < total && !restored; i++) {
+          if (bulbSet.has(i) || puzzle[i] !== 0) continue;
+          puzzle[i] = solution[i];
+          if (this.countSolutions(puzzle, state, 2) === 1) {
+            restored = true; // keep this compensation cell
+          } else {
+            puzzle[i] = 0; // undo, try another
+          }
+        }
+        if (!restored) {
+          // Couldn't find any compensation cell — undo the bulb removal so
+          // the puzzle stays valid (rare; the bulb stays as a given).
+          puzzle[bulbIdx] = backup;
+        }
       }
     }
     return puzzle;
@@ -3401,14 +4763,14 @@ SZ.Engine = {
         return { solution: tempSolution, puzzle, regionMap, constraints: cages };
       } else if (vConf.constraintType === 'thermo') {
         const tempSolution = this.generateSolution(state);
-        const { constraints: thermos } = SZ.Constraints.generateThermometers(tempSolution, state);
+        const { constraints: thermos } = SZ.Constraints.generateThermometers(tempSolution, state, difficulty);
         constraints = thermos;
         state.constraints = thermos;
         const puzzle = this.makePuzzle(tempSolution, state, difficulty);
         return { solution: tempSolution, puzzle, regionMap, constraints: thermos };
       } else if (vConf.constraintType === 'arrow') {
         const tempSolution = this.generateSolution(state);
-        const { constraints: arrows } = SZ.Constraints.generateArrows(tempSolution, state);
+        const { constraints: arrows } = SZ.Constraints.generateArrows(tempSolution, state, difficulty);
         constraints = arrows;
         state.constraints = arrows;
         const puzzle = this.makePuzzle(tempSolution, state, difficulty);
@@ -3570,6 +4932,22 @@ SZ.GameState = class {
         this.puzzle = opts.puzzle;
         this.regionMap = opts.regionMap || this.regionMap;
         this.constraints = opts.constraints || null;
+        // Sync the cached engineState so subsequent operations (peer
+        // building, constraint checks, conflict detection) use the
+        // restored regionMap + constraints, NOT the defaults from the
+        // pre-reset state. Without this, a shared jigsaw puzzle would
+        // use a RANDOM regionMap (from the generateJigsawRegionMap call
+        // above) for peer computation, giving wrong conflict detection.
+        engineState.regionMap = this.regionMap;
+        engineState.constraints = this.constraints;
+        // Invalidate the engineState cache so the NEXT getEngineState()
+        // call rebuilds with the now-correct fields.
+        this._engineStateCache = null;
+        this._engineStateKey = null;
+        // Rebuild peers with the correct regionMap (the _peers built at
+        // line 4926 used the random regionMap for jigsaw, which is wrong).
+        this._peers = SZ.Engine.buildPeers(engineState);
+        engineState._peers = this._peers;
       } else {
         // Generate constraints for constrained variants
         if (vConf.constraintType === 'killer') {
@@ -3583,7 +4961,7 @@ SZ.GameState = class {
           this.puzzle = SZ.Engine.makePuzzle(this.solution, engineState, this.difficulty);
         } else if (vConf.constraintType === 'thermo') {
           const tempSolution = SZ.Engine.generateSolution(engineState);
-          const { constraints: thermos } = SZ.Constraints.generateThermometers(tempSolution, engineState);
+          const { constraints: thermos } = SZ.Constraints.generateThermometers(tempSolution, engineState, this.difficulty);
           this.constraints = thermos;
           engineState.constraints = thermos;
           // Temp solution already satisfies all thermo constraints (strictly increasing)
@@ -3591,7 +4969,7 @@ SZ.GameState = class {
           this.puzzle = SZ.Engine.makePuzzle(this.solution, engineState, this.difficulty);
         } else if (vConf.constraintType === 'arrow') {
           const tempSolution = SZ.Engine.generateSolution(engineState);
-          const { constraints: arrows } = SZ.Constraints.generateArrows(tempSolution, engineState);
+          const { constraints: arrows } = SZ.Constraints.generateArrows(tempSolution, engineState, this.difficulty);
           this.constraints = arrows;
           engineState.constraints = arrows;
           // Temp solution already satisfies all arrow constraints
@@ -3620,12 +4998,35 @@ SZ.GameState = class {
     this.filledCount = this.givenSet.size;
   }
 
-  /** Save history snapshot before a move. */
+  /** Save history snapshot before a move.
+   *  Captures the placed cell's value+notes AND any peer notes that could
+   *  change as a side-effect of the move (peer notes get pruned by
+   *  _clearRelatedNotes on a correct placement, and recomputed by
+   *  _refreshNotesForPeers). Without the peer-notes snapshot, undo would
+   *  restore the cell's value but leave the peer notes permanently
+   *  pruned — silent data loss on every undo of a correct placement. */
   saveHistory(idx) {
+    // Snapshot peer notes too — but ONLY for peers that currently HAVE
+    // notes, so we don't allocate ~20 empty Sets per move on boards where
+    // the user isn't using notes. The restored peer notes are applied
+    // ONLY for those same peer indices on undo (untouched peers stay as
+    // they were).
+    const prevPeerNotes = new Map();
+    if (this._peers) {
+      const peers = this._peers[idx];
+      if (peers) {
+        for (const p of peers) {
+          if (this.notes[p] && this.notes[p].size > 0) {
+            prevPeerNotes.set(p, new Set(this.notes[p]));
+          }
+        }
+      }
+    }
     const entry = {
       idx,
       prevVal: this.userGrid[idx],
       prevNotes: new Set(this.notes[idx]),
+      prevPeerNotes,
       prevMistakes: this.mistakes,
       prevScore: this.score,
       prevCombo: this.comboCount,
@@ -3641,6 +5042,19 @@ SZ.GameState = class {
     const entry = this.history.pop();
     this.userGrid[entry.idx] = entry.prevVal;
     this.notes[entry.idx] = new Set(entry.prevNotes);
+    // Restore peer notes that were captured before the move. We replace
+    // the peer's entire note Set with the snapshot — this correctly
+    // restores notes that were pruned by _clearRelatedNotes and/or
+    // recomputed by _refreshNotesForPeers. Peers that had no notes at
+    // snapshot time are reset to an empty Set, matching their pre-move
+    // state (their notes might have been "computed" by _refreshNotesForPeers
+    // during the move, but if they had none before, they should have
+    // none after undo).
+    if (entry.prevPeerNotes && entry.prevPeerNotes.size > 0) {
+      for (const [p, snap] of entry.prevPeerNotes) {
+        this.notes[p] = new Set(snap);
+      }
+    }
     this.mistakes = entry.prevMistakes;
     this.score = entry.prevScore;
     this.comboCount = entry.prevCombo;
@@ -4097,8 +5511,19 @@ SZ.Renderer = {
     const N = SZ.state.N;
     board.setAttribute('data-size', N);
     board.setAttribute('data-variant', SZ.state.variant);
+    // ARIA: declare the board as a grid. The role is set once on the
+    // container; cells get role="gridcell" below. aria-label on the grid
+    // gives screen readers a context announcement on focus.
+    board.setAttribute('role', 'grid');
+    board.setAttribute('aria-label', `Sudoku board, ${N} by ${N}`);
     board.innerHTML = '';
     for (let r = 0; r < N; r++) {
+      // Wrap each row in a virtual row group. We use a CSS-less <div
+      // role="row"> — the board uses CSS grid via data-size, so the row
+      // wrapper is purely semantic and doesn't affect layout.
+      const rowEl = document.createElement('div');
+      rowEl.setAttribute('role', 'row');
+      rowEl.style.display = 'contents'; // do not affect CSS grid layout
       for (let c = 0; c < N; c++) {
         const cell = document.createElement('div');
         cell.className = 'cell';
@@ -4106,10 +5531,17 @@ SZ.Renderer = {
         cell.dataset.col = c;
         cell.dataset.idx = r * N + c;
         cell.style.animationDelay = (r * N + c) * 4 + 'ms';
-        cell.innerHTML = '<span class="cell-num"></span><div class="cell-notes"></div>';
+        // ARIA + keyboard: make each cell focusable and announced as a
+        // grid cell with its row/column. Screen readers will announce
+        // "Row 3, Column 5" when the user navigates to it.
+        cell.setAttribute('role', 'gridcell');
+        cell.setAttribute('tabindex', '-1'); // focusable but not in tab order by default
+        cell.setAttribute('aria-label', `Row ${r + 1}, Column ${c + 1}`);
+        cell.innerHTML = '<span class="cell-num" aria-hidden="true"></span><div class="cell-notes" aria-hidden="true"></div>';
         cell.addEventListener('click', () => SZ.UI.selectCell(r, c));
-        board.appendChild(cell);
+        rowEl.appendChild(cell);
       }
+      board.appendChild(rowEl);
     }
     this._applyVariantHighlights();
   },
@@ -4246,7 +5678,10 @@ SZ.Renderer = {
       const btn = document.createElement('button');
       btn.className = 'num-btn';
       btn.dataset.num = n;
-      btn.innerHTML = `${symbols[n - 1]}<span class="remaining"></span>`;
+      btn.type = 'button';
+      // Initial aria-label — updated with remaining count in updateNumpad.
+      btn.setAttribute('aria-label', `Enter ${symbols[n - 1]}`);
+      btn.innerHTML = `${symbols[n - 1]}<span class="remaining" aria-hidden="true"></span>`;
       btn.addEventListener('click', () => SZ.UI.enterNumber(n));
       pad.appendChild(btn);
     }
@@ -4259,12 +5694,18 @@ SZ.Renderer = {
       const v = SZ.state.getValue(i);
       if (v) counts[v]++;
     }
+    const symbols = SZ.state.boardConf.symbols;
     document.querySelectorAll('.num-btn').forEach(btn => {
       const n = +btn.dataset.num;
       const rem = N - counts[n];
       btn.classList.toggle('used', rem <= 0);
       const remSpan = btn.querySelector('.remaining');
       if (remSpan) remSpan.textContent = rem > 0 ? rem : '';
+      // Keep the screen-reader label in sync with the remaining count so
+      // SR users hear "Enter 5, 3 remaining" instead of just "Enter 5".
+      btn.setAttribute('aria-label',
+        rem > 0 ? `Enter ${symbols[n - 1]}, ${rem} remaining`
+                : `Enter ${symbols[n - 1]}, none remaining`);
     });
   },
 
@@ -4340,7 +5781,24 @@ SZ.Renderer = {
    *  actually needed for Killer (to hide/show cage decoration as cages
    *  get solved/unsolved), so skip the work for every other variant. */
   refreshKillerCages() {
-    if (SZ.state.variant === 'killer') this._renderConstraints();
+    if (SZ.state.variant !== 'killer') return;
+    const svg = document.getElementById('constraintOverlay');
+    if (!svg) { this._renderConstraints(); return; }
+    const cages = SZ.state.constraints;
+    if (!cages || cages.length === 0) return;
+    const cageSolved = cages.map(c =>
+      c.cells.every(idx => SZ.state.userGrid[idx] === SZ.state.solution[idx])
+    );
+    const groups = svg.querySelectorAll('.cage-group');
+    groups.forEach(g => {
+      const ci = parseInt(g.getAttribute('data-cage-idx'), 10);
+      if (isNaN(ci)) return;
+      if (cageSolved[ci]) {
+        g.classList.add('solved');
+      } else {
+        g.classList.remove('solved');
+      }
+    });
   },
 
   _renderConstraints() {
@@ -4425,74 +5883,7 @@ SZ.Renderer = {
     }
   },
 
-  _renderKillerSVG(svg, constraints, N, cw, ch) {
-    const cellToCage = new Array(N * N).fill(-1);
-    const cageColor = SZ.Constraints.getCageColorMap(constraints, N);
-    const cageSolved = constraints.map(c => c.cells.every(idx => SZ.state.userGrid[idx] === SZ.state.solution[idx]));
-    constraints.forEach((c, ci) => {
-      c.cells.forEach(idx => cellToCage[idx] = ci);
-    });
-
-    // Draw cage sum labels (skip already-solved cages)
-    constraints.forEach((c, ci) => {
-      if (cageSolved[ci]) return;
-      const first = Math.min(...c.cells);
-      const r = Math.floor(first / N), col = first % N;
-      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-      label.setAttribute('x', col * cw + 3);
-      label.setAttribute('y', r * ch + 11);
-      label.setAttribute('font-size', Math.max(8, cw * 0.18));
-      label.setAttribute('font-weight', '700');
-      label.setAttribute('fill', cageColor[ci]);
-      label.setAttribute('font-family', 'DM Sans, sans-serif');
-      label.textContent = c.sum;
-      svg.appendChild(label);
-    });
-
-    // Draw cage borders (skip already-solved cages)
-    for (let r = 0; r < N; r++) {
-      for (let c = 0; c < N; c++) {
-        const idx = r * N + c;
-        const ci = cellToCage[idx];
-        if (ci < 0 || cageSolved[ci]) continue;
-        // Right border
-        if (c < N - 1 && cellToCage[idx + 1] !== ci) {
-          const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-          line.setAttribute('x1', (c + 1) * cw);
-          line.setAttribute('y1', r * ch);
-          line.setAttribute('x2', (c + 1) * cw);
-          line.setAttribute('y2', (r + 1) * ch);
-          line.setAttribute('stroke', cageColor[ci] || '#333');
-          line.setAttribute('stroke-width', '2.5');
-          line.setAttribute('stroke-dasharray', '4,3');
-          svg.appendChild(line);
-        }
-        // Bottom border
-        if (r < N - 1 && cellToCage[idx + N] !== ci) {
-          const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-          line.setAttribute('x1', c * cw);
-          line.setAttribute('y1', (r + 1) * ch);
-          line.setAttribute('x2', (c + 1) * cw);
-          line.setAttribute('y2', (r + 1) * ch);
-          line.setAttribute('stroke', cageColor[ci] || '#333');
-          line.setAttribute('stroke-width', '2.5');
-          line.setAttribute('stroke-dasharray', '4,3');
-          svg.appendChild(line);
-        }
-      }
-    }
-    // Outer border
-    const borderColor = this._cssVar('--box-border') || '#555';
-    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-    rect.setAttribute('x', '0'); rect.setAttribute('y', '0');
-    rect.setAttribute('width', N * cw); rect.setAttribute('height', N * ch);
-    rect.setAttribute('fill', 'none');
-    rect.setAttribute('stroke', borderColor);
-    rect.setAttribute('stroke-width', '3');
-    svg.appendChild(rect);
-  },
-
-  _renderThermoSVG(svg, constraints, N, cw, ch) {
+_renderThermoSVG(svg, constraints, N, cw, ch) {
     const accent = this._cssVar('--accent');
     constraints.forEach(thermo => {
       const cells = thermo.cells;
@@ -5212,6 +6603,19 @@ SZ.UI = {
   selectCell(r, c) {
     SZ.state.selectedCell = [r, c];
     SZ.Renderer.updateHighlights();
+    // Move DOM focus to the selected cell so keyboard users see their
+    // selection follow arrow-key navigation, and so screen readers
+    // announce the newly-selected cell. Guard against null when the
+    // board hasn't been built yet (e.g. during initial load).
+    const cellEl = SZ.Renderer.getCellRC(r, c);
+    if (cellEl && document.activeElement !== cellEl) {
+      // Avoid re-triggering scroll-into-view on every click — only do
+      // it when the focus change comes from keyboard navigation. We
+      // detect this loosely by checking if the active element is
+      // currently a cell (keyboard nav) vs. not (mouse click).
+      const fromKeyboard = document.activeElement && document.activeElement.classList && document.activeElement.classList.contains('cell');
+      cellEl.focus({ preventScroll: !fromKeyboard });
+    }
   },
 
   enterNumber(n) {
@@ -5592,9 +6996,100 @@ SZ.UI = {
   },
 
   // ── New game flow ─────────────────────────────────────
+  /** Start a new game. For heavy tiers (hard+ on any size, or medium+ on
+   *  16×16), show a polished loading overlay before the synchronous puzzle
+   *  generation runs — generation can take a few seconds at those tiers, and
+   *  without a loader the UI just freezes mid-click.
+   *
+   *  The loader yields to the browser (double rAF) so it can paint before the
+   *  CPU-heavy generation starts, and enforces a minimum display time of
+   *  ~450ms so it doesn't flicker for borderline-fast generations. */
   newGame() {
-    SZ.state.newGame();
-    this.startNewGame();
+    if (this._isHeavyGeneration()) {
+      this._showPuzzleLoader();
+      // Two rAFs: the first schedules the second, the second runs after the
+      // browser has actually painted the loader. A single rAF is not enough
+      // on some browsers — the sync generation can still pre-empt the paint.
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const t0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+        try {
+          SZ.state.newGame();
+          this.startNewGame();
+        } finally {
+          const elapsed = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0;
+          const MIN_SHOW_MS = 450;
+          const remaining = Math.max(0, MIN_SHOW_MS - elapsed);
+          setTimeout(() => this._hidePuzzleLoader(), remaining);
+        }
+      }));
+    } else {
+      SZ.state.newGame();
+      this.startNewGame();
+    }
+  },
+
+  /** Returns true when the current config is likely to take more than ~250ms
+   *  to generate — triggers the puzzle loader. Hard+ on any size always
+   *  qualifies; 16×16 also qualifies from Medium up because the larger grid
+   *  multiplies solver cost roughly 6-8×. */
+  _isHeavyGeneration() {
+    const TIER_RANK = { beginner: 0, easy: 1, medium: 2, hard: 3, expert: 4, master: 5, extreme: 6 };
+    const rank = TIER_RANK[SZ.state.difficulty] ?? 2;
+    const isLarge = SZ.state.size === '16x16';
+    return rank >= 3 || (isLarge && rank >= 2);
+  },
+
+  /** Show the puzzle loader. Builds the DOM each time so the subtitle always
+   *  reflects the current config (difficulty · size · variant). */
+  _showPuzzleLoader() {
+    // Remove any stale loader first (e.g. rapid double-click).
+    const stale = document.getElementById('puzzleLoader');
+    if (stale) stale.remove();
+
+    const diffName = (SZ.Difficulties[SZ.state.difficulty] && SZ.Difficulties[SZ.state.difficulty].name)
+                     || SZ.state.difficulty;
+    const sizeLabel = (SZ.Boards[SZ.state.size] && SZ.Boards[SZ.state.size].label)
+                     || SZ.state.size;
+    const vConf = SZ.Variants[SZ.state.variant];
+    const variantName = vConf ? vConf.name : '';
+    const subtitleParts = [diffName, sizeLabel];
+    if (variantName && variantName.toLowerCase() !== 'classic') subtitleParts.push(variantName);
+    const subtitleHtml = subtitleParts
+      .map((p, i) => i === 0 ? p : `<span class="pl-dot">·</span>${p}`)
+      .join('');
+
+    const el = document.createElement('div');
+    el.id = 'puzzleLoader';
+    el.setAttribute('role', 'status');
+    el.setAttribute('aria-live', 'polite');
+    el.setAttribute('aria-label', 'Generating puzzle');
+    el.innerHTML = `
+      <div class="pl-card">
+        <div class="pl-grid" aria-hidden="true">
+          <div class="pl-cell"></div>
+          <div class="pl-cell"></div>
+          <div class="pl-cell"></div>
+          <div class="pl-cell"></div>
+          <div class="pl-cell"></div>
+          <div class="pl-cell"></div>
+          <div class="pl-cell"></div>
+          <div class="pl-cell"></div>
+          <div class="pl-cell"></div>
+        </div>
+        <div class="pl-title">Crafting Puzzle</div>
+        <div class="pl-subtitle">${subtitleHtml}</div>
+      </div>
+    `;
+    document.body.appendChild(el);
+  },
+
+  /** Hide the puzzle loader with a brief fade-out. Safe to call when no
+   *  loader is currently shown. */
+  _hidePuzzleLoader() {
+    const el = document.getElementById('puzzleLoader');
+    if (!el) return;
+    el.classList.add('pl-closing');
+    setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 220);
   },
 
   startNewGame() {
@@ -5626,6 +7121,153 @@ SZ.UI = {
   // ── Overlays ──────────────────────────────────────────
   showOverlay(id) { document.getElementById(id).style.display = 'flex'; },
   hideOverlay(id) { document.getElementById(id).style.display = 'none'; },
+
+  // ── Polished first-launch nickname modal ──────────────
+  //  Replaces SZ.SocialUI.promptNickname with a richer, animated dialog.
+  //  Feature-detects the Social API so the override is a safe no-op if the
+  //  external script failed to load or exposes a different surface.
+  _installPolishedNicknamePrompt() {
+    if (!window.SZ || !SZ.SocialUI) return;
+
+    SZ.SocialUI.promptNickname = function () {
+      // Guard: if Social failed to load, or the player already has a name,
+      // don't show the modal at all.
+      if (!SZ.Social || !SZ.Social.Player) return;
+      try { if (SZ.Social.Player.hasNickname()) return; } catch (_) { /* fall through */ }
+
+      // Don't stack two prompts.
+      const existing = document.getElementById('nicknameOverlay');
+      if (existing) { existing.remove(); }
+
+      // ── Build DOM ──────────────────────────────────────────────────
+      const overlay = document.createElement('div');
+      overlay.className = 'overlay';
+      overlay.id = 'nicknameOverlay';
+      overlay.setAttribute('role', 'dialog');
+      overlay.setAttribute('aria-modal', 'true');
+      overlay.setAttribute('aria-labelledby', 'nickTitleId');
+      overlay.innerHTML = `
+        <div class="nick-modal">
+          <div class="nick-emoji" aria-hidden="true">🧩</div>
+          <h2 class="nick-title" id="nickTitleId">Welcome to Sudoku Zen</h2>
+          <p class="nick-subtitle">
+            Choose a name to claim your spot on the leaderboard and save your
+            progress. You can always change it later in Settings.
+          </p>
+          <div class="nick-field">
+            <input
+              type="text"
+              class="nick-input"
+              id="nickInputId"
+              placeholder="Your name"
+              maxlength="20"
+              autocomplete="off"
+              spellcheck="false"
+              aria-label="Choose your name">
+          </div>
+          <div class="nick-hint" id="nickHintId">
+            2–20 characters. Letters, numbers, and spaces only.
+          </div>
+          <div class="nick-actions">
+            <button class="nick-btn nick-btn-primary" id="nickConfirmId" type="button">Continue</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+
+      const input     = overlay.querySelector('#nickInputId');
+      const confirmBtn = overlay.querySelector('#nickConfirmId');
+      const hint      = overlay.querySelector('#nickHintId');
+
+      // ── Helpers ────────────────────────────────────────────────────
+      const NAME_RE = /^[\p{L}\p{N}][\p{L}\p{N} .'_-]{0,19}$/u;
+
+      const showError = (msg) => {
+        hint.textContent = msg;
+        hint.classList.add('nick-hint-error');
+        input.classList.add('nick-input-error');
+        // Re-trigger shake animation
+        input.classList.remove('nick-input-error');
+        // eslint-disable-next-line no-unused-expressions
+        void input.offsetWidth;
+        input.classList.add('nick-input-error');
+      };
+      const showHint = (msg) => {
+        hint.textContent = msg;
+        hint.classList.remove('nick-hint-error');
+        input.classList.remove('nick-input-error');
+      };
+
+      const closeOverlay = () => {
+        overlay.classList.add('closing');
+        overlay.style.animation = 'fadeOut 0.25s ease forwards';
+        setTimeout(() => overlay.remove(), 260);
+      };
+
+      const submit = () => {
+        const raw = (input.value || '').trim();
+        if (raw.length < 2) { showError('Please enter at least 2 characters.'); return; }
+        if (raw.length > 20) { showError('Name must be 20 characters or fewer.'); return; }
+        if (!NAME_RE.test(raw)) {
+          showError('Use letters, numbers, spaces, . \' _ - only.');
+          return;
+        }
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = 'Saving…';
+
+        // Try the canonical API first; fall back to a couple of common
+        // alternative method names so the override survives minor refactors
+        // in sudoku-social.js.
+        let ok = false;
+        try {
+          if (typeof SZ.Social.Player.setNickname === 'function') {
+            SZ.Social.Player.setNickname(raw); ok = true;
+          } else if (typeof SZ.Social.Player.setName === 'function') {
+            SZ.Social.Player.setName(raw); ok = true;
+          } else if (typeof SZ.Social.Player.save === 'function') {
+            SZ.Social.Player.save({ nickname: raw }); ok = true;
+          }
+        } catch (e) {
+          ok = false;
+        }
+
+        if (!ok) {
+          confirmBtn.disabled = false;
+          confirmBtn.textContent = 'Continue';
+          showError('Could not save your name — please try again.');
+          return;
+        }
+        // Brief success flash, then close.
+        confirmBtn.textContent = 'Saved!';
+        if (SZ.UI && SZ.UI.showToast) {
+          SZ.UI.showToast('Welcome, ' + raw + ' — good luck! 🎯');
+        }
+        setTimeout(closeOverlay, 480);
+      };
+
+      // ── Wire events ────────────────────────────────────────────────
+      confirmBtn.addEventListener('click', submit);
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); submit(); }
+        else if (e.key === 'Escape') { e.preventDefault(); closeOverlay(); }
+      });
+      input.addEventListener('input', () => {
+        // Reset error styling as soon as the user edits the field.
+        if (hint.classList.contains('nick-hint-error')) {
+          showHint('2–20 characters. Letters, numbers, and spaces only.');
+        }
+      });
+      // Click on backdrop closes (but not on the modal itself).
+      overlay.addEventListener('pointerdown', (e) => {
+        if (e.target === overlay) closeOverlay();
+      });
+
+      // ── Reveal & focus ─────────────────────────────────────────────
+      requestAnimationFrame(() => {
+        input.focus();
+      });
+    };
+  },
 
   // ── Share ─────────────────────────────────────────────
   _shareUrl: '',
@@ -5666,29 +7308,108 @@ SZ.UI = {
   },
 
   /**
-   * Share this exact puzzle + your result. Builds a link encoding the
-   * puzzle's RNG seed, variant, size, and difficulty, so anyone who opens
-   * it gets the identical grid (see SZ.UI.tryLoadSharedPuzzle) and can
-   * compare their finished stats against yours.
+   * Share this exact puzzle + your result. Encodes the FULL puzzle data
+   * (givens, solution, constraints, regionMap) directly in the URL so the
+   * recipient gets the IDENTICAL puzzle regardless of any code changes
+   * between sharer and recipient. Also encodes the sharer's stats (time,
+   * mistakes, hints) so the recipient can compare.
+   *
    * Daily/Weekly Challenges are already the same puzzle for everyone by
    * date, so there's nothing extra to encode — fall back to the plain app link.
+   *
+   * Encoding: JSON → URI-encoded → base64. We use encodeURIComponent on the
+   * JSON string first to handle any Unicode, then btoa for base64. This is
+   * safe for all URL contexts and produces a clean `?share=...` param.
    */
   shareResult() {
-    if (SZ.Assist.isCompetitive(SZ.state.challengeType) || SZ.state.puzzleSeed == null) {
+    // Competitive challenges (daily/weekly) are the same for everyone by
+    // date — no need to encode the puzzle, just share the plain link.
+    if (SZ.Assist.isCompetitive(SZ.state.challengeType)) {
       this.shareGame();
       return;
     }
-    const base = 'https://joudlight.github.io/Sudoku-Zen/';
-    const params = new URLSearchParams({
-      seed: SZ.state.puzzleSeed, v: SZ.state.variant, s: SZ.state.size,
-      d: SZ.state.difficulty, m: SZ.state.mode
-    });
-    const url = `${base}?${params.toString()}`;
+    // Need a valid puzzle + solution to share.
+    if (!SZ.state.puzzle || !SZ.state.solution) {
+      this.shareGame();
+      return;
+    }
+
+    const data = {
+      p:  SZ.state.puzzle,        // givens (flat array, 0 = empty)
+      so: SZ.state.solution,      // full solution (for answer-checking)
+      v:  SZ.state.variant,
+      s:  SZ.state.size,
+      d:  SZ.state.difficulty,
+      m:  SZ.state.mode,
+      // Sharer's stats — shown to the recipient as a "beat this" challenge.
+      st: {
+        t:  SZ.state.timerSec,      // time in seconds
+        mm: SZ.state.mistakes,       // mistake count
+        h:  SZ.state.hintsUsedCount, // hints used
+      }
+    };
+    // Constraints (Killer cages / Thermo paths / Arrow paths) — only present
+    // for variant puzzles. Encoding them here guarantees the recipient sees
+    // the same constraints even if the generator code has changed.
+    if (SZ.state.constraints && SZ.state.constraints.length > 0) {
+      data.c = SZ.state.constraints;
+    }
+    // Jigsaw regionMap — needed for jigsaw puzzles to have the right regions.
+    if (SZ.state.regionMap) {
+      data.r = SZ.state.regionMap;
+    }
+
+    const encoded = this._encodeShareData(data);
+    const base = location.origin + location.pathname;
+    const url = `${base}?share=${encoded}`;
+
+    // Build a descriptive share text with the sharer's stats.
     const mmss = this.formatTime(SZ.state.timerSec);
     const diffName = SZ.Difficulties[SZ.state.difficulty].name;
+    const vConf = SZ.Variants[SZ.state.variant];
+    const variantName = vConf && vConf.name !== 'Classic' ? ` ${vConf.name}` : '';
+    const sizeLabel = SZ.Boards[SZ.state.size] ? SZ.Boards[SZ.state.size].label : SZ.state.size;
     const mistakeWord = SZ.state.mistakes === 1 ? 'mistake' : 'mistakes';
-    const text = `I solved a ${diffName} Sudoku Zen puzzle in ${mmss} with ${SZ.state.mistakes} ${mistakeWord}. Think you can beat it? Play the exact same puzzle:`;
+    const hintsPart = SZ.state.hintsUsedCount > 0
+      ? ` and ${SZ.state.hintsUsedCount} ${SZ.state.hintsUsedCount === 1 ? 'hint' : 'hints'}`
+      : '';
+    const text = `I solved a ${diffName}${variantName} (${sizeLabel}) Sudoku Zen puzzle in ${mmss} with ${SZ.state.mistakes} ${mistakeWord}${hintsPart}. Think you can beat it? Play the exact same puzzle:`;
+
     this.shareGame(url, text);
+  },
+
+  /** Encode a share-data object into a URL-safe base64 string.
+   *  Uses encodeURIComponent → unescape → btoa to safely handle any Unicode
+   *  in the JSON (e.g. if constraints ever contain non-ASCII). */
+  _encodeShareData(data) {
+    const json = JSON.stringify(data);
+    try {
+      return btoa(encodeURIComponent(json).replace(/%([0-9A-F]{2})/g,
+        (_, p1) => String.fromCharCode('0x' + p1)));
+    } catch (_) {
+      // btoa can fail in older browsers with non-ASCII — fall back to
+      // plain URI-encoded JSON (longer but always works).
+      return 'J' + encodeURIComponent(json);
+    }
+  },
+
+  /** Decode a share-data string (produced by _encodeShareData) back into
+   *  the original object. Returns null on any decode failure. */
+  _decodeShareData(encoded) {
+    if (!encoded) return null;
+    try {
+      if (encoded.startsWith('J')) {
+        // Fallback encoding: URI-encoded JSON.
+        return JSON.parse(decodeURIComponent(encoded.slice(1)));
+      }
+      // Standard encoding: base64 → URI-decoded JSON.
+      const json = decodeURIComponent(atob(encoded).split('').map(c =>
+        '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)
+      ).join(''));
+      return JSON.parse(json);
+    } catch (_) {
+      return null;
+    }
   },
 
   _shareVia(platform, encodedUrl, rawUrl) {
@@ -5727,26 +7448,135 @@ SZ.UI = {
   },
 
   /**
-   * Loads a puzzle from a shared result link (?seed=&v=&s=&d=&m=), if
-   * present and valid. Called once at boot, before save-restore. Returns
-   * true if a shared puzzle was loaded (caller should skip normal boot).
+   * Loads a puzzle from a shared link. Supports two formats:
+   *
+   *  1. NEW: ?share=<base64-encoded-data> — contains the FULL puzzle data
+   *     (givens, solution, constraints, regionMap, sharer's stats). The
+   *     recipient gets the IDENTICAL puzzle regardless of code changes.
+   *     This is the robust format produced by shareResult().
+   *
+   *  2. OLD: ?seed=<number>&v=<variant>&s=<size>&d=<difficulty>&m=<mode> —
+   *     regenerates the puzzle from the seed. Kept for backwards compat
+   *     with links shared before the upgrade. May produce a different
+   *     puzzle if the generation code has changed since the link was
+   *     created (which is why the new format exists).
+   *
+   * Called once at boot, before save-restore. Returns true if a shared
+   * puzzle was loaded (caller should skip normal boot).
    */
   tryLoadSharedPuzzle() {
     const params = new URLSearchParams(location.search);
+
+    // ── NEW format: ?share=<base64> ──────────────────────────────────
+    const shareEncoded = params.get('share');
+    if (shareEncoded) {
+      const data = this._decodeShareData(shareEncoded);
+      if (data && data.p && data.so && data.v && data.s && data.d) {
+        // Validate all config values against the known registries.
+        if (!SZ.Boards[data.s] || !SZ.Variants[data.v] || !SZ.Difficulties[data.d] || !SZ.Modes[data.m]) {
+          this.showToast('Invalid share link — loading a fresh puzzle instead.');
+          return false;
+        }
+        // Load the puzzle directly — no regeneration needed. We pass the
+        // puzzle + solution + constraints + regionMap through newGame's
+        // opts so they're installed verbatim.
+        const opts = {
+          size: data.s,
+          variant: data.v,
+          difficulty: data.d,
+          mode: data.m,
+          challengeType: null,
+          challengeDate: null,
+          solution: data.so,
+          puzzle: data.p,
+          constraints: data.c || null,
+          regionMap: data.r || null,
+        };
+        SZ.state.newGame(opts);
+        this.startNewGame();
+
+        // Show the sharer's stats as a "beat this" challenge banner.
+        if (data.st) {
+          this._showChallengerStats(data.st, data.d, data.v, data.s);
+        }
+
+        // Clean the URL so a later refresh resumes via the save system
+        // instead of re-parsing the (potentially very long) share param.
+        history.replaceState(null, '', location.pathname);
+        this.showToast("Loaded a friend's shared puzzle — good luck! 🎯");
+        return true;
+      }
+      // Decode failed — fall through to seed-based loading or return false.
+      this.showToast('Could not read the shared puzzle — loading a fresh one.');
+    }
+
+    // ── OLD format: ?seed=<number>&v=...&s=...&d=...&m=... ──────────
     const seedStr = params.get('seed');
-    if (!seedStr || !/^\d+$/.test(seedStr)) return false;
-    const size = params.get('s') || '9x9';
-    const variant = params.get('v') || 'classic';
-    const difficulty = params.get('d') || 'medium';
-    const mode = params.get('m') || 'zen';
-    if (!SZ.Boards[size] || !SZ.Variants[variant] || !SZ.Difficulties[difficulty] || !SZ.Modes[mode]) return false;
-    SZ.state.newGame({ size, variant, difficulty, mode, seed: Number(seedStr), challengeType: null, challengeDate: null });
-    this.startNewGame();
-    // Clean the URL so a later refresh resumes the in-progress game via the
-    // normal save system instead of re-generating this shared puzzle fresh.
-    history.replaceState(null, '', location.pathname);
-    this.showToast("Loaded a friend's shared puzzle — good luck!");
-    return true;
+    if (seedStr && /^\d+$/.test(seedStr)) {
+      const size = params.get('s') || '9x9';
+      const variant = params.get('v') || 'classic';
+      const difficulty = params.get('d') || 'medium';
+      const mode = params.get('m') || 'zen';
+      if (SZ.Boards[size] && SZ.Variants[variant] && SZ.Difficulties[difficulty] && SZ.Modes[mode]) {
+        SZ.state.newGame({ size, variant, difficulty, mode, seed: Number(seedStr), challengeType: null, challengeDate: null });
+        this.startNewGame();
+        history.replaceState(null, '', location.pathname);
+        this.showToast("Loaded a friend's shared puzzle — good luck!");
+        return true;
+      }
+    }
+
+    return false;
+  },
+
+  /** Display a "challenger's stats" banner when loading a shared puzzle.
+   *  Shows the sharer's time, mistakes, and hints — gives the recipient
+   *  a target to beat. Auto-dismisses after 8 seconds. */
+  _showChallengerStats(st, difficulty, variant, size) {
+    if (!st) return;
+    const mmss = this.formatTime(st.t || 0);
+    const diffName = SZ.Difficulties[difficulty] ? SZ.Difficulties[difficulty].name : difficulty;
+    const vConf = SZ.Variants[variant];
+    const variantName = vConf && vConf.name !== 'Classic' ? ' ' + vConf.name : '';
+    const mistakes = st.mm || 0;
+    const hints = st.h || 0;
+    const mistakeWord = mistakes === 1 ? 'mistake' : 'mistakes';
+    const hintsPart = hints > 0
+      ? ` · ${hints} ${hints === 1 ? 'hint' : 'hints'}`
+      : '';
+
+    // Build a polished banner element.
+    const banner = document.createElement('div');
+    banner.style.cssText = `
+      position: fixed; top: 16px; left: 50%; transform: translateX(-50%) translateY(-100px);
+      background: var(--paper, #fbf7f0); color: var(--ink, #1c1917);
+      border: 1.5px solid var(--accent, #b45309); border-radius: 14px;
+      padding: 14px 22px; box-shadow: 0 12px 40px rgba(0,0,0,0.18);
+      z-index: 900; max-width: 90vw; text-align: center;
+      font-family: 'DM Sans', system-ui, sans-serif; font-size: 13px;
+      transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.3s ease;
+      opacity: 0; pointer-events: none;
+    `;
+    banner.innerHTML = `
+      <div style="font-family:'DM Serif Display',Georgia,serif; font-size:16px; font-weight:400; margin-bottom:4px; color:var(--ink,#1c1917);">
+        🏆 Challenge: beat ${mmss}
+      </div>
+      <div style="color:var(--ink-light,#78716c); font-size:11px; letter-spacing:0.3px;">
+        ${diffName}${variantName} · ${mistakes} ${mistakeWord}${hintsPart}
+      </div>
+    `;
+    document.body.appendChild(banner);
+    // Animate in.
+    requestAnimationFrame(() => {
+      banner.style.transform = 'translateX(-50%) translateY(0)';
+      banner.style.opacity = '1';
+    });
+    // Auto-dismiss after 8 seconds.
+    setTimeout(() => {
+      banner.style.transform = 'translateX(-50%) translateY(-100px)';
+      banner.style.opacity = '0';
+      setTimeout(() => banner.remove(), 450);
+    }, 8000);
   },
 
   // ── Toast ─────────────────────────────────────────────
@@ -5757,6 +7587,10 @@ SZ.UI = {
     clearTimeout(this._toastTimer);
     const el = document.createElement('div');
     el.className = 'toast-msg';
+    // role="status" + aria-live="polite" so screen readers announce
+    // the toast without interrupting other speech.
+    el.setAttribute('role', 'status');
+    el.setAttribute('aria-live', 'polite');
     el.textContent = msg;
     Object.assign(el.style, {
       position: 'fixed', bottom: '20px', left: '50%', transform: 'translateX(-50%)',
@@ -5847,8 +7681,23 @@ SZ.Keyboard = {
     if (key === 'z') { SZ.UI.undoMove(); return; }
     if (key === 'p') { SZ.UI.togglePause(); return; }
 
-    if (!SZ.state.selectedCell) return;
-    let [r, c] = SZ.state.selectedCell;
+    let r, c;
+    if (!SZ.state.selectedCell) {
+      // If the user has focused the board (or any cell) but hasn't picked a
+      // cell yet, seed the selection to (0,0) on the first arrow-key press.
+      // This makes Tab-to-board → Arrow keys work without first requiring
+      // a mouse click. Number keys still bail (below) when no cell is
+      // selected — we only seed on arrow navigation.
+      const boardFocused = document.activeElement &&
+        (document.activeElement.id === 'board' ||
+         (document.activeElement.classList && document.activeElement.classList.contains('cell')));
+      if (!boardFocused) return;
+      SZ.UI.selectCell(0, 0);
+      // Fall through to apply the pressed arrow direction to the new selection.
+      [r, c] = SZ.state.selectedCell;
+    } else {
+      [r, c] = SZ.state.selectedCell;
+    }
     if (e.key === 'ArrowUp' || key === 'w') r = Math.max(0, r - 1);
     else if (e.key === 'ArrowDown' || key === 's') r = Math.min(N - 1, r + 1);
     else if (e.key === 'ArrowLeft' || key === 'a') c = Math.max(0, c - 1);
@@ -5875,9 +7724,16 @@ SZ.Init = {
     // Settings
     SZ.Settings.apply();
 
+    // ── Override the default first-launch nickname prompt with a polished,
+    //    animated, font-rich version. We replace SZ.SocialUI.promptNickname
+    //    in-place so any other call sites (e.g. leaderboard UI) also get
+    //    the polished experience. The override degrades gracefully if
+    //    SZ.SocialUI or SZ.Social.Player is missing. ─────────────────────
+    SZ.UI._installPolishedNicknamePrompt();
+
     // Social: first-launch nickname prompt (no-op if SZ.Social failed to load)
-    if (SZ.Social && !SZ.Social.Player.hasNickname()) {
-      setTimeout(() => SZ.SocialUI && SZ.SocialUI.promptNickname(), 600);
+    if (SZ.Social && SZ.Social.Player && !SZ.Social.Player.hasNickname()) {
+      setTimeout(() => SZ.SocialUI && SZ.SocialUI.promptNickname && SZ.SocialUI.promptNickname(), 600);
     }
 
     // Build config bar
@@ -6013,6 +7869,21 @@ SZ.Init = {
 
 // Boot
 document.addEventListener('DOMContentLoaded', () => SZ.Init.run());
+
+// ── Service Worker registration (PWA / offline) ───────────────────────
+//  Registered after first paint — no hurry, and keeps the main thread
+//  free during the critical startup window. The SW itself caches the
+//  app shell so subsequent loads (and offline loads) work.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch((err) => {
+      // SW registration failed — non-fatal, app still works online.
+      // Log quietly; users on browsers without SW support or on
+      // non-secure origins (file://, http://) will hit this.
+      if (window.console && console.warn) console.warn('SW registration failed:', err);
+    });
+  });
+}
 
 })();
 </script>
