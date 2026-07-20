@@ -424,6 +424,10 @@ body::before {
   display: flex; flex-direction: column; align-items: center;
   gap: 12px; position: relative; z-index: 1;
 }
+/* 16×16 gets a much bigger board (see #board[data-size="16"] below) — widen
+   the whole app container so the side panel still has room to breathe next
+   to it instead of getting squeezed by board-wrap's flex-shrink:0. */
+#app[data-board-size="16"] { max-width: 1480px; }
 
 /* ═══════════════════════════════════════════════════════
    HEADER
@@ -550,26 +554,38 @@ header {
   transition: border-color 0.35s ease, background 0.35s ease, box-shadow 0.35s ease;
 }
 
-/* Board sizes — responsive */
+/* Board sizes — responsive
+   Each board is capped by both viewport width AND height so the page never
+   requires scrolling. The `calc(100vh - 170px)` term reserves space for the
+   header (~44px), top-bar (~28px), config-bar (~38px), body padding (~24px),
+   and a small margin. Bumped from previous caps so cells are larger and
+   easier to read across all sizes. */
 #board[data-size="4"] {
   grid-template-columns: repeat(4, 1fr);
   grid-template-rows: repeat(4, 1fr);
-  width: min(60vw, 320px); height: min(60vw, 320px);
+  width:  min(62vw, 400px, calc(100vh - 170px));
+  height: min(62vw, 400px, calc(100vh - 170px));
 }
 #board[data-size="6"] {
   grid-template-columns: repeat(6, 1fr);
   grid-template-rows: repeat(6, 1fr);
-  width: min(70vw, 380px); height: min(70vw, 380px);
+  width:  min(72vw, 480px, calc(100vh - 170px));
+  height: min(72vw, 480px, calc(100vh - 170px));
 }
 #board[data-size="9"] {
   grid-template-columns: repeat(9, 1fr);
   grid-template-rows: repeat(9, 1fr);
-  width: min(52vw, 440px); height: min(52vw, 440px);
+  width:  min(60vw, 560px, calc(100vh - 170px));
+  height: min(60vw, 560px, calc(100vh - 170px));
 }
 #board[data-size="16"] {
   grid-template-columns: repeat(16, 1fr);
   grid-template-rows: repeat(16, 1fr);
-  width: min(92vw, 560px); height: min(92vw, 560px);
+  /* Slightly smaller than before (was 66vw/1120px) AND capped by viewport height
+     so the whole page fits without scrolling on common laptop screens.
+     The `calc(100vh - 170px)` term reserves room for header + top-bar + config-bar + body padding. */
+  width:  min(64vw, 1020px, calc(100vh - 170px));
+  height: min(64vw, 1020px, calc(100vh - 170px));
 }
 
 .cell {
@@ -727,7 +743,7 @@ input:focus-visible {
 #board[data-size="4"]  .cell-num { font-size: clamp(20px, 4vw, 36px); }
 #board[data-size="6"]  .cell-num { font-size: clamp(16px, 3vw, 28px); }
 #board[data-size="9"]  .cell-num { font-size: clamp(14px, 2.6vw, 22px); }
-#board[data-size="16"] .cell-num { font-size: clamp(10px, 1.6vw, 16px); font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+#board[data-size="16"] .cell-num { font-size: clamp(16px, 2.6vw, 30px); font-family: 'JetBrains Mono', monospace; font-weight: 600; }
 
 .cell.given .cell-num  { color: var(--given); }
 .cell.user-entered .cell-num { color: var(--user); }
@@ -752,7 +768,7 @@ input:focus-visible {
 #board[data-size="4"]  .note-digit { font-size: clamp(8px, 1.5vw, 12px); }
 #board[data-size="6"]  .note-digit { font-size: clamp(6px, 1.1vw, 10px); }
 #board[data-size="9"]  .note-digit { font-size: clamp(6px, 0.9vw, 9px); }
-#board[data-size="16"] .note-digit { font-size: clamp(5px, 0.7vw, 7px); font-family: 'JetBrains Mono', monospace; }
+#board[data-size="16"] .note-digit { font-size: clamp(7px, 1.1vw, 11px); font-family: 'JetBrains Mono', monospace; }
 
 /* Hint highlight (logic hints) */
 .cell.hint-cell {
@@ -832,7 +848,7 @@ input:focus-visible {
 .numpad[data-cols="4"] { grid-template-columns: repeat(4, 1fr); }
 .numpad[data-cols="6"] { grid-template-columns: repeat(6, 1fr); }
 .numpad[data-cols="9"] { grid-template-columns: repeat(9, 1fr); }
-.numpad[data-cols="16"] { grid-template-columns: repeat(4, 1fr); }
+.numpad[data-cols="8"] { grid-template-columns: repeat(8, 1fr); gap: 6px; }
 
 .num-btn {
   font-family: 'DM Serif Display', serif;
@@ -844,7 +860,12 @@ input:focus-visible {
   box-shadow: 0 1px 3px var(--shadow); position: relative;
   display: flex; align-items: center; justify-content: center; line-height: 1;
 }
-.numpad[data-cols="16"] .num-btn { font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: clamp(13px, 1.6vw, 17px); }
+/* 16×16 uses hex-style symbols (0-9, A-F) — packing 8 per row instead of 4
+   halves the button height/row-count (2 rows instead of 4), so the side
+   panel fits without scrolling. Bigger font/padding than before so the
+   hex digits (especially B/D/8/0) are easy to tell apart at a glance. */
+.numpad[data-cols="8"] .num-btn { font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: clamp(15px, 1.7vw, 20px); padding: 12px 0; letter-spacing: 0.5px; }
+.numpad[data-cols="8"] .num-btn .remaining { font-size: 9px; top: 3px; right: 4px; }
 .num-btn:hover { border-color: var(--accent); transform: translateY(-1px); box-shadow: 0 3px 10px var(--shadow); }
 .num-btn:active { transform: translateY(0); }
 .num-btn.used { color: var(--ink-faint); border-color: var(--ink-faint); opacity: 0.5; }
@@ -875,6 +896,17 @@ input:focus-visible {
 .action-btn:disabled:hover { transform: none; border-color: var(--cell-border); }
 .action-btn.assist-locked { border-style: dashed; opacity: 0.75; }
 .action-btn.assist-locked::after { content: '🔒'; font-size: 9px; margin-left: 3px; }
+
+/* Undo/Redo split pair — occupies the same single grid cell the old
+   standalone Undo button used, just divided into two half-width buttons
+   side by side instead of adding a whole new row to the actions grid. */
+.action-btn-split { display: flex; gap: 5px; }
+.action-btn.half {
+  flex: 1 1 0; padding: 9px 4px; gap: 4px;
+  justify-content: center; text-align: center; min-width: 0;
+}
+.action-btn.half .icon { font-size: 13px; }
+.action-btn.half span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .badge {
   margin-left: auto; font-size: 9px; background: var(--bg);
   padding: 2px 7px; border-radius: var(--radius-full);
@@ -972,7 +1004,7 @@ footer a:hover { color: var(--accent); }
   font-family: 'DM Sans', sans-serif;
   dominant-baseline: hanging;
 }
-#board[data-size="16"] #constraintOverlay text { font-size: 7px; }
+#board[data-size="16"] #constraintOverlay text { font-size: 11px; }
 /* Cage group fade transition — solved cages gracefully disappear */
 .cage-group { transition: opacity 0.25s ease-out; }
 .cage-group.solved { opacity: 0; pointer-events: none; }
@@ -1604,22 +1636,135 @@ footer a:hover { color: var(--accent); }
 }
 
 /* ═══════════════════════════════════════════════════════
+   FULLSCREEN MODE
+   Toggled by the ⛶ button (id="fullscreenBtn") or the F key.
+   Hides all chrome (header, top-bar, config-bar, footer, share FAB)
+   and lets the game-layout fill the whole viewport so the board
+   + side panel can grow as large as the screen allows.
+   ═══════════════════════════════════════════════════════ */
+html:has(#app.fs-mode),
+#app.fs-mode {
+  height: 100vh;
+  max-height: 100vh;
+  overflow: hidden;
+}
+#app.fs-mode {
+  max-width: 100% !important;
+  width: 100%;
+  padding: 8px 12px;
+  box-sizing: border-box;
+  justify-content: center;
+}
+/* Hide non-essential chrome — keep the fullscreen toggle button itself
+   visible so users can exit. We hide the entire header EXCEPT the
+   fullscreen button by hiding header children and re-showing the button. */
+#app.fs-mode > header,
+#app.fs-mode > .top-bar,
+#app.fs-mode > .config-bar,
+#app.fs-mode > #challengeBar,
+#app.fs-mode > footer {
+  display: none !important;
+}
+/* Floating share FAB would overlap the side panel in fullscreen — hide it. */
+#app.fs-mode ~ .share-fab,
+body:has(#app.fs-mode) .share-fab {
+  display: none !important;
+}
+/* Expand the game layout to fill the viewport height. Width is unconstrained
+   so on desktop the board+side-panel spread out, and on mobile (where
+   .game-layout is column) the board can be as tall as the screen allows. */
+#app.fs-mode .game-layout {
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: 100%;
+  min-height: 0;        /* allow children to shrink inside flex */
+  align-items: stretch; /* on desktop, side panel stretches to match board height */
+  gap: 20px;
+}
+/* In fullscreen, give the board the full viewport height minus a small
+   padding. This overrides the per-size calc(100vh - 170px) caps so the
+   board can grow to fill the available space. */
+#app.fs-mode #board {
+  width:  min(70vw, 1400px, calc(100vh - 24px)) !important;
+  height: min(70vw, 1400px, calc(100vh - 24px)) !important;
+}
+/* For 16×16 specifically, allow it to be even wider since it has more cells. */
+#app.fs-mode #board[data-size="16"] {
+  width:  min(80vw, 1400px, calc(100vh - 24px)) !important;
+  height: min(80vw, 1400px, calc(100vh - 24px)) !important;
+}
+/* Make the fullscreen button visually indicate "active" state. */
+#fullscreenBtn.fs-active {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+/* Smooth transition into / out of fullscreen. */
+#app, header, .top-bar, .config-bar, footer, #board {
+  transition: max-width 0.25s ease, padding 0.25s ease;
+}
+
+/* Fullscreen on mobile / tablet (≤680px) — board is column-stacked above
+   the side panel, so cap height more aggressively to leave room for the
+   numpad + actions below. */
+@media (max-width: 680px) {
+  #app.fs-mode #board {
+    width:  min(94vw, calc(100vh - 280px)) !important;
+    height: min(94vw, calc(100vh - 280px)) !important;
+  }
+  #app.fs-mode #board[data-size="16"] {
+    width:  min(94vw, calc(100vh - 240px)) !important;
+    height: min(94vw, calc(100vh - 240px)) !important;
+  }
+  #app.fs-mode { padding: 6px 8px; }
+  /* On mobile the header is fully hidden — provide a small floating exit
+     button so the user can leave fullscreen without the keyboard. */
+  #app.fs-mode::after {
+    content: '⤡ Exit';
+    position: fixed;
+    top: 8px; right: 10px;
+    z-index: 1000;
+    padding: 4px 10px;
+    border-radius: var(--radius-full);
+    background: var(--ink);
+    color: var(--paper);
+    font-size: 11px;
+    font-family: 'DM Sans', sans-serif;
+    font-weight: 600;
+    line-height: 1.4;
+    cursor: pointer;
+    box-shadow: 0 2px 8px var(--shadow-lg);
+  }
+}
+@media (max-width: 400px) {
+  #app.fs-mode #board {
+    width:  min(96vw, calc(100vh - 280px)) !important;
+    height: min(96vw, calc(100vh - 280px)) !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
    RESPONSIVE
    ═══════════════════════════════════════════════════════ */
 @media (max-width: 680px) {
   .game-layout { flex-direction: column; align-items: center; }
-  #board[data-size="4"]  { width: min(92vw, 320px); height: min(92vw, 320px); }
-  #board[data-size="6"]  { width: min(92vw, 380px); height: min(92vw, 380px); }
-  #board[data-size="9"]  { width: min(92vw, 400px); height: min(92vw, 400px); }
-  #board[data-size="16"] { width: min(96vw, 500px); height: min(96vw, 500px); }
+  #board[data-size="4"]  { width: min(92vw, 380px, calc(100vh - 380px)); height: min(92vw, 380px, calc(100vh - 380px)); }
+  #board[data-size="6"]  { width: min(92vw, 440px, calc(100vh - 380px)); height: min(92vw, 440px, calc(100vh - 380px)); }
+  #board[data-size="9"]  { width: min(92vw, 460px, calc(100vh - 380px)); height: min(92vw, 460px, calc(100vh - 380px)); }
+  #board[data-size="16"] { width: min(94vw, 560px, calc(100vh - 360px)); height: min(94vw, 560px, calc(100vh - 360px)); }
+  /* Keep the 16×16 numpad readable on phones: stay 8-wide (don't collapse to 4)
+     and keep the remaining counter visible instead of hiding it. */
+  .numpad[data-cols="8"] { grid-template-columns: repeat(8, 1fr); gap: 4px; }
+  .numpad[data-cols="8"] .num-btn { padding: 9px 0; font-size: clamp(13px, 3.4vw, 16px); }
+  .numpad[data-cols="8"] .num-btn .remaining { display: block !important; font-size: 7px; top: 2px; right: 2px; }
   .side-panel { width: min(92vw, 400px); }
   .numpad[data-cols="9"] { grid-template-columns: repeat(9, 1fr); gap: 4px; }
-  .numpad[data-cols="16"] { grid-template-columns: repeat(8, 1fr); }
   .num-btn { padding: 7px 0; }
   .num-btn .remaining { display: none; }
   .actions { grid-template-columns: repeat(2, 1fr); }
   .action-btn { font-size: 11px; padding: 8px 10px; }
   .action-btn .icon { font-size: 13px; }
+  .action-btn.half { padding: 8px 2px; gap: 3px; }
   header { flex-wrap: wrap; gap: 8px; }
   .header-left { width: 100%; justify-content: center; }
   .header-right { width: 100%; justify-content: center; }
@@ -1631,12 +1776,21 @@ footer a:hover { color: var(--accent); }
 }
 @media (max-width: 400px) {
   body { padding: 6px 6px 12px; }
-  #board[data-size="9"]  { width: min(96vw, 340px); height: min(96vw, 340px); }
-  #board[data-size="16"] { width: min(96vw, 380px); height: min(96vw, 380px); }
-  .numpad[data-cols="16"] { grid-template-columns: repeat(4, 1fr); }
+  #board[data-size="4"]  { width: min(94vw, 320px, calc(100vh - 360px)); height: min(94vw, 320px, calc(100vh - 360px)); }
+  #board[data-size="6"]  { width: min(94vw, 360px, calc(100vh - 360px)); height: min(94vw, 360px, calc(100vh - 360px)); }
+  #board[data-size="9"]  { width: min(96vw, 380px, calc(100vh - 340px)); height: min(96vw, 380px, calc(100vh - 340px)); }
+  #board[data-size="16"] { width: min(94vw, 400px, calc(100vh - 320px)); height: min(94vw, 400px, calc(100vh - 320px)); }
+  /* Keep 8-wide numpad layout even on very narrow screens — 4-wide doubled
+     the row count and pushed the side panel off-screen. Buttons are ~45px
+     wide at 375px viewport, which still fits a 14px hex digit comfortably. */
+  .numpad[data-cols="8"] { grid-template-columns: repeat(8, 1fr); gap: 3px; }
+  .numpad[data-cols="8"] .num-btn { padding: 7px 0; font-size: clamp(12px, 3.2vw, 14px); }
+  .numpad[data-cols="8"] .num-btn .remaining { font-size: 6px; top: 1px; right: 2px; }
   .num-btn { padding: 6px 0; font-size: 16px; }
   .actions { gap: 4px; }
   .action-btn { padding: 6px 8px; font-size: 10px; gap: 4px; }
+  .action-btn.half { padding: 6px 2px; gap: 3px; }
+  .action-btn-split { gap: 3px; }
   .stats-row { gap: 10px; }
   .stat-val { font-size: 15px; }
   .tagline { display: none; }
@@ -1724,6 +1878,7 @@ footer a:hover { color: var(--accent); }
       </div>
       <button class="icon-btn" id="themeToggle" aria-label="Cycle theme">🎨</button>
       <button class="icon-btn" id="soundToggle" aria-label="Toggle sound">🔊</button>
+      <button class="icon-btn" id="fullscreenBtn" aria-label="Toggle fullscreen" title="Fullscreen (F)">⛶</button>
       <button class="icon-btn" id="settingsBtn" aria-label="Settings">⚙️</button>
       <button class="icon-btn" id="helpToggle" aria-label="Help">?</button>
     </div>
@@ -1776,7 +1931,10 @@ footer a:hover { color: var(--accent); }
       <div class="actions" role="group" aria-label="Actions">
         <button class="action-btn" id="noteBtn"><span class="icon">✏️</span><span>Notes</span><span class="badge" id="noteLabel">OFF</span></button>
         <button class="action-btn" id="pencilBtn"><span class="icon">🪄</span><span>Magic Pencil</span></button>
-        <button class="action-btn" id="undoBtn"><span class="icon">↩️</span><span>Undo</span></button>
+        <div class="action-btn-split" id="undoRedoGroup">
+          <button class="action-btn half" id="undoBtn" title="Undo (Z)"><span class="icon">↩️</span><span>Undo</span></button>
+          <button class="action-btn half" id="redoBtn" title="Redo (Shift+Z)"><span class="icon">↪️</span><span>Redo</span></button>
+        </div>
         <button class="action-btn" id="eraseBtn"><span class="icon">⌫</span><span>Erase</span></button>
         <button class="action-btn" id="hintBtn"><span class="icon">💡</span><span>Hint</span><span class="badge" id="hintCount">3</span></button>
         <button class="action-btn" id="logicHintBtn"><span class="icon">🧠</span><span>Logic Hint</span></button>
@@ -1858,7 +2016,10 @@ footer a:hover { color: var(--accent); }
       <span class="help-key">H</span><span class="help-desc">Use hint</span>
       <span class="help-key">L</span><span class="help-desc">Logic hint</span>
       <span class="help-key">Z</span><span class="help-desc">Undo move</span>
+      <span class="help-key">⇧Z / Y</span><span class="help-desc">Redo move</span>
       <span class="help-key">P</span><span class="help-desc">Pause / Resume</span>
+      <span class="help-key">F</span><span class="help-desc">Toggle fullscreen</span>
+      <span class="help-key">Esc</span><span class="help-desc">Exit fullscreen / close dialog</span>
       <span class="help-key">⇅⇠⇢</span><span class="help-desc">Arrow keys / WASD</span>
       <span class="help-key">?</span><span class="help-desc">Show this help</span>
     </div>
@@ -4387,18 +4548,30 @@ SZ.Engine = {
           if (c.cells.length > 0) bulbSet.add(c.cells[0]);
         }
       }
-      const bulbCells     = this._shuffle([...bulbSet]);
-      const otherVariant  = this._shuffle([...variantSet].filter(i => !bulbSet.has(i)));
-      const otherCells    = this._shuffle([...Array(total).keys()].filter(i => !variantSet.has(i)));
       const TIER_RANK = { beginner: 0, easy: 1, medium: 2, hard: 3, expert: 4, master: 5, extreme: 6 };
       const rank = TIER_RANK[difficulty] ?? 2;
-      // Bulbs always go FIRST so they're removed before anything else; the
-      // remaining variant cells follow the tier-based bias as before.
-      if (rank >= 3) {
-        order = [...bulbCells, ...otherVariant, ...otherCells];
-      } else {
-        order = [...bulbCells, ...otherCells, ...otherVariant];
+      // Bulbs always go FIRST so they're removed before anything else.
+      // For the remaining variant cells (arrow circle+path / thermo tube),
+      // use a SOFT bias instead of a hard partition: low tiers push them
+      // later on average, high tiers pull them earlier — but every variant
+      // cell still gets a real (if unlikely) chance to be near the front.
+      // A hard partition (all variant cells strictly after all non-variant
+      // cells) previously meant that whenever targetRemove was smaller than
+      // the non-variant cell count — true for beginner/easy/medium, whose
+      // removeRatio is 30-50% — the loop ran out of budget before ever
+      // reaching the variant cells. Every arrow stayed fully given, so it
+      // never needed solving. This weighted-key sort fixes that: no group
+      // is ever fully excluded from candidacy.
+      const bias = (rank - 3) * 0.15; // negative delays variant cells, positive front-loads them
+      const keyed = [];
+      for (let i = 0; i < total; i++) {
+        let key = Math.random();
+        if (bulbSet.has(i)) key -= 2;
+        else if (variantSet.has(i)) key += bias;
+        keyed.push([key, i]);
       }
+      keyed.sort((a, b) => a[0] - b[0]);
+      order = keyed.map(k => k[1]);
     } else {
       order = this._shuffle([...Array(total).keys()]);
     }
@@ -4824,6 +4997,7 @@ SZ.GameState = class {
     this.comboCount = 0;
     this.history = [];
     this.historyMax = 30;
+    this.redoStack = []; // moves undone via undo(), replayable via redo() until a new move overwrites them
     this.challengeType = null;  // 'daily' | 'weekly' | null
     this.challengeDate = null;
     this.constraints = null;    // variant constraint data (cages/thermos/arrows)
@@ -5005,12 +5179,16 @@ SZ.GameState = class {
    *  _refreshNotesForPeers). Without the peer-notes snapshot, undo would
    *  restore the cell's value but leave the peer notes permanently
    *  pruned — silent data loss on every undo of a correct placement. */
-  saveHistory(idx) {
+  /** Snapshot the current state of `idx` (+ its peers' notes) into a
+   *  restorable entry. Shared by saveHistory (captures the "before" state
+   *  ahead of a move, for undo) and undo/redo (each captures the state
+   *  they're about to overwrite, so the opposite action can restore it). */
+  _captureEntry(idx) {
     // Snapshot peer notes too — but ONLY for peers that currently HAVE
     // notes, so we don't allocate ~20 empty Sets per move on boards where
     // the user isn't using notes. The restored peer notes are applied
-    // ONLY for those same peer indices on undo (untouched peers stay as
-    // they were).
+    // ONLY for those same peer indices when this entry is later applied
+    // (untouched peers stay as they were).
     const prevPeerNotes = new Map();
     if (this._peers) {
       const peers = this._peers[idx];
@@ -5022,7 +5200,7 @@ SZ.GameState = class {
         }
       }
     }
-    const entry = {
+    return {
       idx,
       prevVal: this.userGrid[idx],
       prevNotes: new Set(this.notes[idx]),
@@ -5033,13 +5211,12 @@ SZ.GameState = class {
       prevHints: this.hintsLeft,
       prevHintsUsed: this.hintsUsedCount
     };
-    this.history.push(entry);
-    if (this.history.length > this.historyMax) this.history.shift();
   }
 
-  undo() {
-    if (!this.modeConf.undo || this.gameOver || this.paused || this.history.length === 0) return false;
-    const entry = this.history.pop();
+  /** Apply a previously-captured entry (restore idx's value/notes, peer
+   *  notes, and the run's stats to what the entry snapshotted). Shared by
+   *  undo and redo since they're mirror-image operations. */
+  _applyEntry(entry) {
     this.userGrid[entry.idx] = entry.prevVal;
     this.notes[entry.idx] = new Set(entry.prevNotes);
     // Restore peer notes that were captured before the move. We replace
@@ -5049,7 +5226,7 @@ SZ.GameState = class {
     // snapshot time are reset to an empty Set, matching their pre-move
     // state (their notes might have been "computed" by _refreshNotesForPeers
     // during the move, but if they had none before, they should have
-    // none after undo).
+    // none after this entry is applied).
     if (entry.prevPeerNotes && entry.prevPeerNotes.size > 0) {
       for (const [p, snap] of entry.prevPeerNotes) {
         this.notes[p] = new Set(snap);
@@ -5061,6 +5238,33 @@ SZ.GameState = class {
     this.hintsLeft = entry.prevHints;
     this.hintsUsedCount = entry.prevHintsUsed ?? this.hintsUsedCount;
     this._updateFilled();
+  }
+
+  saveHistory(idx) {
+    this.history.push(this._captureEntry(idx));
+    if (this.history.length > this.historyMax) this.history.shift();
+    // A fresh move branches off from wherever we are — any previously
+    // undone moves waiting in the redo stack are no longer reachable.
+    if (this.redoStack.length > 0) this.redoStack = [];
+  }
+
+  undo() {
+    if (!this.modeConf.undo || this.gameOver || this.paused || this.history.length === 0) return false;
+    const entry = this.history.pop();
+    // Capture the state we're about to overwrite so redo() can restore it.
+    this.redoStack.push(this._captureEntry(entry.idx));
+    this._applyEntry(entry);
+    return true;
+  }
+
+  redo() {
+    if (!this.modeConf.undo || this.gameOver || this.paused || this.redoStack.length === 0) return false;
+    const entry = this.redoStack.pop();
+    // Push directly (bypassing saveHistory) so we don't wipe redoStack —
+    // there may be more redo steps still queued after this one.
+    this.history.push(this._captureEntry(entry.idx));
+    if (this.history.length > this.historyMax) this.history.shift();
+    this._applyEntry(entry);
     return true;
   }
 
@@ -5223,7 +5427,7 @@ SZ.GameState = class {
       selectedCell: this.selectedCell, noteMode: this.noteMode,
       hintsLeft: this.hintsLeft, hintsUsedCount: this.hintsUsedCount, mistakes: this.mistakes, score: this.score,
       timerSec: this.timerSec, filledCount: this.filledCount, paused: this.paused,
-      gameOver: this.gameOver, comboCount: this.comboCount, history: this.history,
+      gameOver: this.gameOver, comboCount: this.comboCount, history: this.history, redoStack: this.redoStack,
       challengeType: this.challengeType, challengeDate: this.challengeDate,
       constraints: this.constraints,
       assistUnlocked: this.assistUnlocked, magicPencilUsed: this.magicPencilUsed,
@@ -5244,6 +5448,7 @@ SZ.GameState = class {
     this.timerSec = d.timerSec; this.filledCount = d.filledCount; this.paused = d.paused;
     this.gameOver = d.gameOver; this.comboCount = d.comboCount || 0;
     this.history = d.history || [];
+    this.redoStack = d.redoStack || [];
     this.challengeType = d.challengeType; this.challengeDate = d.challengeDate;
     this.assistUnlocked = d.assistUnlocked || false;
     this.magicPencilUsed = d.magicPencilUsed || false;
@@ -5510,6 +5715,10 @@ SZ.Renderer = {
     const board = document.getElementById('board');
     const N = SZ.state.N;
     board.setAttribute('data-size', N);
+    // 16×16 gets a wider #app container (see CSS) so its bigger cells don't
+    // squeeze the side panel — this attribute is what that CSS keys off.
+    const app = document.getElementById('app');
+    if (app) app.setAttribute('data-board-size', N);
     board.setAttribute('data-variant', SZ.state.variant);
     // ARIA: declare the board as a grid. The role is set once on the
     // container; cells get role="gridcell" below. aria-label on the grid
@@ -5670,7 +5879,7 @@ SZ.Renderer = {
     const pad = document.getElementById('numpad');
     const N = SZ.state.N;
     const symbols = SZ.state.boardConf.symbols;
-    // Layout: 4x4 board → 4 cols, 6x6 → 6 cols, 9x9 → 9 cols, 16x16 → 4 cols (wraps)
+    // Layout: 4x4 board → 4 cols, 6x6 → 6 cols, 9x9 → 9 cols, 16x16 → 8 cols (wraps to 2 rows)
     const cols = N === 16 ? 8 : N;
     pad.setAttribute('data-cols', cols);
     pad.innerHTML = '';
@@ -5746,7 +5955,6 @@ SZ.Renderer = {
     const hintBtn = document.getElementById('hintBtn');
     const logicBtn = document.getElementById('logicHintBtn');
     const pencilBtn = document.getElementById('pencilBtn');
-    const undoBtn = document.getElementById('undoBtn');
     const isCompetitive = SZ.Assist.isCompetitive(SZ.state.challengeType);
     hintBtn.disabled = !mode.unlimitedHints && SZ.state.hintsLeft <= 0;
     // Logic Hint and Magic Pencil are fully blocked (no enable option) during
@@ -5765,7 +5973,7 @@ SZ.Renderer = {
     logicBtn.title = isCompetitive ? 'Disabled during Daily/Weekly Challenges to keep the leaderboard fair' : lockedTitle;
     pencilBtn.classList.toggle('assist-locked', !isCompetitive && mode.assistLocked && !assistUnlocked);
     logicBtn.classList.toggle('assist-locked', !isCompetitive && mode.assistLocked && !assistUnlocked);
-    undoBtn.disabled = !mode.undo;
+    SZ.UI.updateUndoRedoButtons();
     document.getElementById('hintCount').textContent = SZ.state.modeConf.unlimitedHints ? '∞' : SZ.state.hintsLeft;
   },
 
@@ -6676,6 +6884,7 @@ SZ.UI = {
     SZ.Renderer.updateProgress();
     SZ.Renderer.refreshKillerCages();
     SZ.Audio.erase();
+    this.updateUndoRedoButtons();
     SZ.Save.save();
   },
 
@@ -6692,6 +6901,28 @@ SZ.UI = {
     this.updateStatDisplays();
     SZ.Audio.undo();
     SZ.Save.save();
+  },
+
+  redoMove() {
+    if (!SZ.state.redo()) return;
+    SZ.Renderer.renderBoard();
+    this.updateStatDisplays();
+    // Reuses the undo sound — a redo is just "undo, but forward" and
+    // doesn't warrant a whole new sound asset for the same click feel.
+    SZ.Audio.undo();
+    SZ.Save.save();
+  },
+
+  /** Enable/disable the Undo and Redo buttons based on whether there's
+   *  anything to undo/redo right now, plus whether the current mode
+   *  allows undo at all (e.g. Hardcore). Called after every move that
+   *  can change either stack (place, erase, hint, undo, redo). */
+  updateUndoRedoButtons() {
+    const mode = SZ.state.modeConf;
+    const undoBtn = document.getElementById('undoBtn');
+    const redoBtn = document.getElementById('redoBtn');
+    if (undoBtn) undoBtn.disabled = !mode.undo || SZ.state.history.length === 0;
+    if (redoBtn) redoBtn.disabled = !mode.undo || SZ.state.redoStack.length === 0;
   },
 
   useHint() {
@@ -6878,6 +7109,7 @@ SZ.UI = {
     document.getElementById('scoreDisplay').textContent = SZ.state.score;
     document.getElementById('streakDisplay').textContent = SZ.state.comboCount;
     document.getElementById('hintCount').textContent = SZ.state.modeConf.unlimitedHints ? '∞' : SZ.state.hintsLeft;
+    this.updateUndoRedoButtons();
   },
 
   // ── Win / Fail flow ───────────────────────────────────
@@ -7111,6 +7343,7 @@ SZ.UI = {
     this.updateStatDisplays();
     document.getElementById('timerDisplay').textContent = '00:00';
     document.getElementById('undoBtn').style.opacity = '1';
+    document.getElementById('redoBtn').style.opacity = '1';
     this.startTimer();
     // Apply body data attributes
     document.body.setAttribute('data-mode', SZ.state.mode);
@@ -7631,6 +7864,26 @@ SZ.UI = {
    ═══════════════════════════════════════════════════════ */
 SZ.Keyboard = {
   handle(e) {
+    // Fullscreen toggle (F) — works even with overlays open.
+    // Shift+F is reserved by some browsers, so plain lowercase 'f' only.
+    if (e.key && e.key.toLowerCase() === 'f' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      // Don't trigger when typing into an input/textarea
+      const tag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : '';
+      if (tag !== 'input' && tag !== 'textarea') {
+        e.preventDefault();
+        if (SZ._toggleFullscreen) SZ._toggleFullscreen();
+        return;
+      }
+    }
+    // Exit fullscreen on Escape — before the generic overlay-close below,
+    // so fullscreen exits first and a second Esc closes any open overlay.
+    if (e.key === 'Escape') {
+      const app = document.getElementById('app');
+      if (app && app.classList.contains('fs-mode')) {
+        if (SZ._toggleFullscreen) SZ._toggleFullscreen();
+        return;
+      }
+    }
     // Help toggle
     if (e.key === '?' || (e.key === '/' && e.shiftKey)) {
       e.preventDefault();
@@ -7678,7 +7931,9 @@ SZ.Keyboard = {
     if (key === 'm') { SZ.UI.magicPencil(); return; }
     if (key === 'h') { SZ.UI.useHint(); return; }
     if (key === 'l') { SZ.UI.logicHint(); return; }
+    if (key === 'z' && e.shiftKey) { SZ.UI.redoMove(); return; }
     if (key === 'z') { SZ.UI.undoMove(); return; }
+    if (key === 'y') { SZ.UI.redoMove(); return; }
     if (key === 'p') { SZ.UI.togglePause(); return; }
 
     let r, c;
@@ -7759,6 +8014,58 @@ SZ.Init = {
     });
     document.getElementById('closeSettingsBtn').addEventListener('click', () => SZ.UI.hideOverlay('settingsOverlay'));
 
+    // Fullscreen toggle — uses a CSS class on #app (.fs-mode) which hides
+    // header / top-bar / config / footer and grows the board to fill the
+    // viewport. Falls back to the native Fullscreen API when available so
+    // the browser chrome (URL bar, tabs) is also hidden on desktop.
+    const fsBtn = document.getElementById('fullscreenBtn');
+    const setFsState = (on) => {
+      document.getElementById('app').classList.toggle('fs-mode', on);
+      fsBtn.classList.toggle('fs-active', on);
+      fsBtn.setAttribute('aria-pressed', String(on));
+      fsBtn.textContent = on ? '⤡' : '⛶';
+      SZ.UI.showToast(on ? 'Fullscreen on — press F or Esc to exit' : 'Fullscreen off');
+    };
+    const toggleFullscreen = () => {
+      const isOn = document.getElementById('app').classList.contains('fs-mode');
+      if (!isOn) {
+        setFsState(true);
+        // Request native fullscreen too (best-effort — silently ignored if unsupported)
+        const el = document.documentElement;
+        const req = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || el.msRequestFullscreen;
+        if (req) {
+          try { Promise.resolve(req.call(el)).catch(() => {}); } catch (_) { /* ignore */ }
+        }
+      } else {
+        setFsState(false);
+        const exit = document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen || document.msExitFullscreen;
+        if (exit && (document.fullscreenElement || document.webkitFullscreenElement)) {
+          try { exit.call(document); } catch (_) { /* ignore */ }
+        }
+      }
+    };
+    fsBtn.addEventListener('click', toggleFullscreen);
+    // Click on the mobile "Exit" pseudo-element (sits at top-right of #app).
+    document.getElementById('app').addEventListener('click', (e) => {
+      // The ::after is not a real node, but clicks within ~50px of the
+      // top-right corner of #app while in fs-mode count as exit clicks.
+      if (!document.getElementById('app').classList.contains('fs-mode')) return;
+      if (window.innerWidth > 680) return; // exit pill only shows on mobile
+      const rect = e.currentTarget.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      if (x > rect.width - 90 && y < 40) toggleFullscreen();
+    });
+    // Sync state if the user exits native fullscreen via Esc (browser-triggered).
+    const syncFs = () => {
+      const nativeOn = !!(document.fullscreenElement || document.webkitFullscreenElement);
+      const cssOn = document.getElementById('app').classList.contains('fs-mode');
+      if (!nativeOn && cssOn) setFsState(false);
+    };
+    document.addEventListener('fullscreenchange', syncFs);
+    document.addEventListener('webkitfullscreenchange', syncFs);
+    SZ._toggleFullscreen = toggleFullscreen;
+
     // Help
     document.getElementById('helpToggle').addEventListener('click', () => SZ.UI.showOverlay('helpOverlay'));
     document.getElementById('helpGotItBtn').addEventListener('click', () => SZ.UI.hideOverlay('helpOverlay'));
@@ -7805,6 +8112,7 @@ SZ.Init = {
     document.getElementById('hintBtn').addEventListener('click', () => SZ.UI.useHint());
     document.getElementById('logicHintBtn').addEventListener('click', () => SZ.UI.logicHint());
     document.getElementById('undoBtn').addEventListener('click', () => SZ.UI.undoMove());
+    document.getElementById('redoBtn').addEventListener('click', () => SZ.UI.redoMove());
     document.getElementById('pauseBtn').addEventListener('click', () => SZ.UI.togglePause());
     document.getElementById('newGameBtn').addEventListener('click', () => SZ.UI.newGame());
     document.getElementById('shareBtn').addEventListener('click', () => SZ.UI.shareGame());
