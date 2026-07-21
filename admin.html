@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sudoku Zen — Admin Dashboard</title>
+<meta name="robots" content="noindex, nofollow">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer id="sbLib"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js" defer id="chartLib"></script>
+<style>
+  :root{
+    --bg:#f5f0e8; --bg-soft:#ede7db; --paper:#fdfaf4; --ink:#1c1917; --ink-light:#78716c;
+    --ink-faint:#d6d0c4; --accent:#b45309; --accent2:#0369a1; --good:#059669; --bad:#dc2626;
+    --shadow:rgba(28,25,23,0.10); --radius:14px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; min-height:100vh; background:var(--bg); color:var(--ink);
+    font-family:'DM Sans',sans-serif; padding:20px;
+  }
+  h1,h2,h3{font-family:'DM Serif Display',serif; font-weight:400; margin:0 0 4px;}
+  a{color:var(--accent2);}
+
+  /* ── Password gate ── */
+  #gate{
+    max-width:380px; margin:12vh auto; background:var(--paper); border-radius:var(--radius);
+    padding:32px 28px; box-shadow:0 8px 30px var(--shadow); text-align:center;
+  }
+  #gate p{color:var(--ink-light); font-size:14px; margin:8px 0 20px;}
+  #gate input{
+    width:100%; padding:12px 14px; border-radius:10px; border:1px solid var(--ink-faint);
+    font-size:15px; margin-bottom:12px; background:var(--bg-soft); color:var(--ink);
+  }
+  #gate button{
+    width:100%; padding:12px; border:none; border-radius:10px; background:var(--accent);
+    color:#fff; font-size:15px; font-weight:600; cursor:pointer;
+  }
+  #gate button:hover{opacity:.92;}
+  #gateError{color:var(--bad); font-size:13px; min-height:18px; margin-top:6px;}
+
+  /* ── Dashboard ── */
+  #dash{display:none; max-width:1200px; margin:0 auto;}
+  .topbar{display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:22px;}
+  .topbar .sub{color:var(--ink-light); font-size:13px;}
+  .topbar-actions{display:flex; gap:8px; align-items:center;}
+  .btn{
+    padding:9px 14px; border-radius:9px; border:1px solid var(--ink-faint); background:var(--paper);
+    color:var(--ink); font-size:13px; cursor:pointer; font-weight:600;
+  }
+  .btn.primary{background:var(--accent); color:#fff; border-color:var(--accent);}
+  .btn:hover{filter:brightness(0.97);}
+  #liveDot{width:8px; height:8px; border-radius:50%; background:var(--good); display:inline-block; margin-right:6px; animation:pulse 2s infinite;}
+  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.35;}}
+
+  .kpi-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-bottom:22px;}
+  .kpi{background:var(--paper); border-radius:var(--radius); padding:16px 18px; box-shadow:0 2px 10px var(--shadow);}
+  .kpi .label{font-size:12px; color:var(--ink-light); text-transform:uppercase; letter-spacing:.04em; margin-bottom:6px;}
+  .kpi .value{font-family:'JetBrains Mono',monospace; font-size:26px; font-weight:600;}
+  .kpi .value.good{color:var(--good);}
+  .kpi .value.accent{color:var(--accent);}
+
+  .grid2{display:grid; grid-template-columns:2fr 1fr; gap:16px; margin-bottom:16px;}
+  @media (max-width:860px){.grid2{grid-template-columns:1fr;}}
+
+  .card{background:var(--paper); border-radius:var(--radius); padding:18px 20px; box-shadow:0 2px 10px var(--shadow);}
+  .card h2{font-size:18px; margin-bottom:14px;}
+  .card canvas{max-height:280px;}
+
+  table{width:100%; border-collapse:collapse; font-size:13px;}
+  th,td{text-align:left; padding:8px 6px; border-bottom:1px solid var(--ink-faint);}
+  th{color:var(--ink-light); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.03em;}
+  tr:last-child td{border-bottom:none;}
+
+  .comment-item{padding:10px 0; border-bottom:1px solid var(--ink-faint);}
+  .comment-item:last-child{border-bottom:none;}
+  .comment-item .meta{font-size:11px; color:var(--ink-light); margin-bottom:3px;}
+  .comment-item .txt{font-size:14px;}
+
+  .empty{color:var(--ink-light); font-size:13px; padding:20px 0; text-align:center;}
+  .note{font-size:12px; color:var(--ink-light); margin-top:18px; line-height:1.6;}
+</style>
+</head>
+<body>
+
+<!-- ═══ PASSWORD GATE ═══
+     NOTE: this is a convenience lock for casual visitors, not real
+     security — the Supabase anon key is public in every client and
+     these RPCs are intentionally readable by anon (aggregate data
+     only, same trust level as your public leaderboard). Change
+     ADMIN_PASSWORD_HASH below to your own password's SHA-256 hash. -->
+<div id="gate">
+  <h1>🧩 Sudoku Zen</h1>
+  <p>Admin dashboard — enter password to continue</p>
+  <input type="password" id="pwInput" placeholder="Password" autocomplete="off">
+  <button id="pwSubmit">Unlock</button>
+  <div id="gateError"></div>
+</div>
+
+<div id="dash">
+  <div class="topbar">
+    <div>
+      <h1>Sudoku Zen — Stats</h1>
+      <div class="sub"><span id="liveDot"></span>Live from Supabase · Daily Challenge data only · last updated <span id="lastUpdated">—</span></div>
+    </div>
+    <div class="topbar-actions">
+      <button class="btn" id="refreshBtn">↻ Refresh</button>
+      <button class="btn" id="autoBtn">▶ Auto-refresh: off</button>
+      <button class="btn" id="lockBtn">🔒 Lock</button>
+    </div>
+  </div>
+
+  <div class="kpi-grid" id="kpiGrid">
+    <div class="empty">Loading stats…</div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h2>Solves — last 30 days</h2>
+      <canvas id="trendChart"></canvas>
+    </div>
+    <div class="card">
+      <h2>By difficulty (today)</h2>
+      <canvas id="diffChart"></canvas>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h2>Today's leaderboard</h2>
+      <div id="leaderboardWrap"><div class="empty">Loading…</div></div>
+    </div>
+    <div class="card">
+      <h2>Recent feedback</h2>
+      <div id="commentsWrap"><div class="empty">Loading…</div></div>
+    </div>
+  </div>
+
+  <p class="note">
+    Only Daily Challenge attempts are tracked server-side (they round-trip through your
+    <code>start-attempt</code> / <code>complete-attempt</code> Edge Functions). Regular practice
+    puzzles are generated and solved entirely on-device in localStorage, so they can't appear here.
+    Run <code>supabase/migrations/20260721000000_admin_dashboard_stats.sql</code> in the Supabase
+    SQL editor once before this page will show data.
+  </p>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ── Config ────────────────────────────────────────────────
+  const SUPABASE_URL = "https://uwoydzphaykxinsclqnb.supabase.co";
+  const SUPABASE_ANON_KEY = "sb_publishable_S2jXQ87IMU7BPvQW1c4kpw_5SI5EdQA";
+
+  // SHA-256 hash of the admin password. Default password is "sudoku-admin" —
+  // CHANGE THIS before publishing. To generate a hash for a new password,
+  // open this page's console and run:
+  //   crypto.subtle.digest("SHA-256", new TextEncoder().encode("your-new-password"))
+  //     .then(b => console.log([...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("")))
+  // then paste the result below.
+  const ADMIN_PASSWORD_HASH = "16566f1601bc5dfa7cf8a54beec04a5f8eb0f62e07b5603908295e6055a38ace"; // default: "Sudoku-zen"
+
+  const SESSION_KEY = "sz-admin-unlocked";
+
+  // ── Password gate ───────────────────────────────────────────
+  async function sha256(text) {
+    const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+    return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  async function tryUnlock() {
+    const val = document.getElementById("pwInput").value;
+    const hash = await sha256(val);
+    if (hash === ADMIN_PASSWORD_HASH) {
+      sessionStorage.setItem(SESSION_KEY, "1");
+      showDashboard();
+    } else {
+      document.getElementById("gateError").textContent = "Incorrect password.";
+    }
+  }
+
+  document.getElementById("pwSubmit").addEventListener("click", tryUnlock);
+  document.getElementById("pwInput").addEventListener("keydown", e => { if (e.key === "Enter") tryUnlock(); });
+  document.getElementById("lockBtn").addEventListener("click", () => {
+    sessionStorage.removeItem(SESSION_KEY);
+    location.reload();
+  });
+
+  function showDashboard() {
+    document.getElementById("gate").style.display = "none";
+    document.getElementById("dash").style.display = "block";
+    boot();
+  }
+
+  if (sessionStorage.getItem(SESSION_KEY) === "1") {
+    showDashboard();
+  }
+
+  // ── Dashboard logic (only runs once unlocked) ───────────────
+  let client, trendChart, diffChart, autoTimer = null;
+
+  function waitFor(cond) {
+    return new Promise(resolve => {
+      const t = setInterval(() => { if (cond()) { clearInterval(t); resolve(); } }, 50);
+    });
+  }
+
+  async function boot() {
+    await waitFor(() => window.supabase && window.Chart);
+    client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    document.getElementById("refreshBtn").addEventListener("click", loadAll);
+    document.getElementById("autoBtn").addEventListener("click", toggleAuto);
+    loadAll();
+  }
+
+  function toggleAuto() {
+    const btn = document.getElementById("autoBtn");
+    if (autoTimer) {
+      clearInterval(autoTimer); autoTimer = null;
+      btn.textContent = "▶ Auto-refresh: off";
+    } else {
+      autoTimer = setInterval(loadAll, 60000);
+      btn.textContent = "⏸ Auto-refresh: on (60s)";
+    }
+  }
+
+  async function loadAll() {
+    try {
+      await Promise.all([loadOverview(), loadTrend(), loadDifficulty(), loadLeaderboard(), loadComments()]);
+      document.getElementById("lastUpdated").textContent = new Date().toLocaleTimeString();
+    } catch (e) {
+      console.error("[admin] load failed", e);
+    }
+  }
+
+  function fmtSecs(s) {
+    if (s === null || s === undefined) return "—";
+    const m = Math.floor(s / 60), r = Math.round(s % 60);
+    return `${m}:${String(r).padStart(2, "0")}`;
+  }
+
+  // ── KPI cards ────────────────────────────────────────────
+  async function loadOverview() {
+    const { data, error } = await client.rpc("admin_dashboard_overview");
+    const grid = document.getElementById("kpiGrid");
+    if (error || !data || !data[0]) {
+      grid.innerHTML = `<div class="empty">Couldn't load stats. Have you run the migration SQL yet? (${error ? error.message : "no data"})</div>`;
+      return;
+    }
+    const d = data[0];
+    const cards = [
+      ["Solved today", d.solves_today, "good"],
+      ["Active players today", d.active_players_today, "accent"],
+      ["Attempts started today", d.attempts_started_today, ""],
+      ["Completion rate today", d.completion_rate_today + "%", ""],
+      ["Avg. time today", fmtSecs(d.avg_time_seconds_today), ""],
+      ["Solved this week", d.solves_this_week, ""],
+      ["Solved all-time", d.solves_all_time, ""],
+      ["Total players", d.total_players, ""],
+      ["New players today", d.new_players_today, "good"],
+      ["Avg. rating", d.avg_rating_overall ?? "—", ""],
+      ["Total ratings", d.total_ratings, ""],
+      ["Total comments", d.total_comments, ""],
+    ];
+    grid.innerHTML = cards.map(([label, val, cls]) =>
+      `<div class="kpi"><div class="label">${label}</div><div class="value ${cls}">${val ?? "—"}</div></div>`
+    ).join("");
+  }
+
+  // ── Trend chart ──────────────────────────────────────────
+  async function loadTrend() {
+    const { data, error } = await client.rpc("admin_dashboard_trend", { p_days: 30 });
+    if (error || !data) return;
+    const labels = data.map(r => r.day.slice(5));
+    const started = data.map(r => r.attempts_started);
+    const solved = data.map(r => r.solves);
+
+    const ctx = document.getElementById("trendChart");
+    if (trendChart) trendChart.destroy();
+    trendChart = new Chart(ctx, {
+      type: "line",
+      data: {
+        labels,
+        datasets: [
+          { label: "Started", data: started, borderColor: "#0369a1", backgroundColor: "rgba(3,105,161,0.08)", tension: 0.3, fill: true },
+          { label: "Solved", data: solved, borderColor: "#b45309", backgroundColor: "rgba(180,83,9,0.12)", tension: 0.3, fill: true },
+        ],
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { position: "bottom" } },
+        scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+      },
+    });
+  }
+
+  // ── Difficulty chart ─────────────────────────────────────
+  async function loadDifficulty() {
+    const { data, error } = await client.rpc("admin_dashboard_by_difficulty");
+    if (error || !data) return;
+    const labels = data.map(r => r.difficulty);
+    const solves = data.map(r => r.solves);
+
+    const ctx = document.getElementById("diffChart");
+    if (diffChart) diffChart.destroy();
+    diffChart = new Chart(ctx, {
+      type: "bar",
+      data: { labels, datasets: [{ label: "Solved today", data: solves, backgroundColor: "#b45309" }] },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+      },
+    });
+  }
+
+  // ── Today's leaderboard ──────────────────────────────────
+  async function loadLeaderboard() {
+    const today = new Date().toISOString().slice(0, 10);
+    const { data, error } = await client
+      .from("leaderboard_daily")
+      .select("nickname,time_seconds,mistakes,hints_used,difficulty,completed_at")
+      .eq("puzzle_date", today)
+      .order("time_seconds", { ascending: true })
+      .limit(10);
+    const wrap = document.getElementById("leaderboardWrap");
+    if (error) { wrap.innerHTML = `<div class="empty">${error.message}</div>`; return; }
+    if (!data || !data.length) { wrap.innerHTML = `<div class="empty">No one has solved today's puzzle yet.</div>`; return; }
+    wrap.innerHTML = `<table><thead><tr><th>#</th><th>Player</th><th>Diff.</th><th>Time</th><th>Mistakes</th></tr></thead><tbody>
+      ${data.map((r, i) => `<tr><td>${i + 1}</td><td>${escapeHtml(r.nickname || "Anonymous")}</td><td>${escapeHtml(r.difficulty || "")}</td><td>${fmtSecs(r.time_seconds)}</td><td>${r.mistakes}</td></tr>`).join("")}
+      </tbody></table>`;
+  }
+
+  // ── Recent comments/feedback ─────────────────────────────
+  async function loadComments() {
+    const { data, error } = await client.rpc("admin_dashboard_recent_comments", { p_limit: 15 });
+    const wrap = document.getElementById("commentsWrap");
+    if (error) { wrap.innerHTML = `<div class="empty">${error.message}</div>`; return; }
+    if (!data || !data.length) { wrap.innerHTML = `<div class="empty">No feedback yet.</div>`; return; }
+    wrap.innerHTML = data.map(c => `
+      <div class="comment-item">
+        <div class="meta">${escapeHtml(c.nickname)} · ${new Date(c.created_at).toLocaleString()}</div>
+        <div class="txt">${escapeHtml(c.comment)}</div>
+      </div>`).join("");
+  }
+
+  function escapeHtml(s) {
+    return String(s ?? "").replace(/[&<>"']/g, m => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
+  }
+})();
+</script>
+</body>
+</html>

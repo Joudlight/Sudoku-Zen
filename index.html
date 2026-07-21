@@ -12,23 +12,29 @@
 </script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>Sudoku Zen — Premium Sudoku Platform</title>
-<meta name="description" content="Sudoku Zen — multiple board sizes, variants, game modes, daily challenges, achievements and themes.">
+<title>Play Sudoku Online Free — Daily Puzzles & Leaderboards | Sudoku Zen</title>
+<meta name="description" content="Play free online Sudoku — no download, no signup. 7 variants (Classic, X-Sudoku, Killer, Jigsaw & more), 4 board sizes, daily challenges, global leaderboards and stats. Works on desktop and mobile.">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<meta name="keywords" content="sudoku, play sudoku online, free sudoku, daily sudoku, sudoku puzzles, killer sudoku, x-sudoku, jigsaw sudoku, sudoku leaderboard, sudoku game">
+<meta name="author" content="Sudoku Zen">
 
 <!-- Open Graph / Facebook / general link preview -->
 <meta property="og:type" content="website">
+<meta property="og:site_name" content="Sudoku Zen">
 <meta property="og:url" content="https://joudlight.github.io/Sudoku-Zen/">
-<meta property="og:title" content="Sudoku Zen — Premium Sudoku Platform">
-<meta property="og:description" content="Sudoku Zen — multiple board sizes, variants, game modes, daily challenges, achievements and themes.">
+<meta property="og:title" content="Play Sudoku Online Free — Daily Puzzles & Leaderboards | Sudoku Zen">
+<meta property="og:description" content="Free online Sudoku with 7 variants, 4 board sizes, daily challenges and global leaderboards. No download, no signup — just open and play.">
 <meta property="og:image" content="https://joudlight.github.io/Sudoku-Zen/preview.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Sudoku Zen — a 9x9 sudoku board mid-game with a warm paper theme">
+<meta property="og:locale" content="en_US">
 
 <!-- Twitter Card -->
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:url" content="https://joudlight.github.io/Sudoku-Zen/">
-<meta name="twitter:title" content="Sudoku Zen — Premium Sudoku Platform">
-<meta name="twitter:description" content="Sudoku Zen — multiple board sizes, variants, game modes, daily challenges, achievements and themes.">
+<meta name="twitter:title" content="Play Sudoku Online Free — Daily Puzzles & Leaderboards | Sudoku Zen">
+<meta name="twitter:description" content="Free online Sudoku with 7 variants, 4 board sizes, daily challenges and global leaderboards. No download, no signup — just open and play.">
 <meta name="twitter:image" content="https://joudlight.github.io/Sudoku-Zen/preview.png">
 
 <meta name="theme-color" content="#b45309" id="themeColorMeta">
@@ -1807,6 +1813,33 @@ body:has(#app.fs-mode) .share-fab {
   .tagline { display: none; }
 }
 
+.visually-hidden {
+  position: absolute !important;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0,0,0,0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ═══ SEO content block (About / How to Play / FAQ) ═══ */
+.seo-content {
+  width: 100%; max-width: 720px; margin: 8px auto 0; padding: 20px 4px 4px;
+  color: var(--ink-light); font-size: 14px; line-height: 1.7;
+}
+.seo-content h2 {
+  font-family: 'DM Serif Display', serif; font-size: 19px; color: var(--ink);
+  margin: 22px 0 8px;
+}
+.seo-content h2:first-child { margin-top: 0; }
+.seo-content h3 {
+  font-family: 'DM Sans', sans-serif; font-weight: 600; font-size: 14px; color: var(--ink);
+  margin: 14px 0 4px;
+}
+.seo-content p { margin: 0 0 10px; }
+.seo-content ul { margin: 0 0 10px; padding-left: 20px; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
@@ -1842,13 +1875,6 @@ body:has(#app.fs-mode) .share-fab {
   },
   "inLanguage": "en",
   "isAccessibleForFree": true,
-  "aggregateRating": {
-    "@type": "AggregateRating",
-    "ratingValue": "5",
-    "ratingCount": "1",
-    "bestRating": "5",
-    "worstRating": "1"
-  },
   "featureList": [
     "4×4, 6×6, 9×9 and 16×16 board sizes",
     "7 variants: Classic, X-Sudoku, Jigsaw, Hyper, Killer, Thermo, Arrow",
@@ -1857,6 +1883,40 @@ body:has(#app.fs-mode) .share-fab {
     "Daily and weekly challenges with global leaderboards",
     "Achievements, statistics, and progression system",
     "7 themes, polished animations, and synthesized audio"
+  ]
+}
+</script>
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Is Sudoku Zen free to play?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Yes. Sudoku Zen is completely free to play in your browser, with no download, no signup and no paywalled puzzles." }
+    },
+    {
+      "@type": "Question",
+      "name": "What Sudoku variants can I play?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Classic Sudoku plus X-Sudoku, Jigsaw, Hyper, Killer, Thermo and Arrow variants, across 4x4, 6x6, 9x9 and 16x16 board sizes." }
+    },
+    {
+      "@type": "Question",
+      "name": "What is the Sudoku Zen Daily Challenge?",
+      "acceptedAnswer": { "@type": "Answer", "text": "A new puzzle is generated every day. Everyone who plays that day solves the same puzzle, and finishing it ranks you on the daily leaderboard alongside players around the world." }
+    },
+    {
+      "@type": "Question",
+      "name": "Does Sudoku Zen save my progress?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Yes. Your game state, statistics, achievements and settings are saved automatically in your browser, so you can close the tab and pick up right where you left off." }
+    },
+    {
+      "@type": "Question",
+      "name": "Can I play Sudoku Zen on my phone?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Yes. Sudoku Zen is fully responsive and works on desktop, tablet and mobile, and can be added to your home screen as an installable app." }
+    }
   ]
 }
 </script>
@@ -1877,6 +1937,7 @@ body:has(#app.fs-mode) .share-fab {
 <body>
 
 <div id="app">
+  <h1 class="visually-hidden">Sudoku Zen — Play Free Online Sudoku Puzzles with Daily Challenges and Leaderboards</h1>
   <!-- ═══ HEADER ═══ -->
   <header>
     <div class="header-left">
@@ -1954,6 +2015,51 @@ body:has(#app.fs-mode) .share-fab {
       </div>
     </aside>
   </div>
+
+  <section class="seo-content" aria-label="About Sudoku Zen">
+    <h2>Play Sudoku Online, Free — No Download Required</h2>
+    <p>
+      Sudoku Zen is a free browser-based Sudoku game with seven variants, four board
+      sizes and seven difficulty levels, so it works whether you're picking up a pencil-and-paper
+      classic for the first time or hunting for a genuinely hard puzzle. Every game auto-saves,
+      so you can close the tab mid-solve and pick up exactly where you left off.
+    </p>
+
+    <h2>How to Play Sudoku</h2>
+    <p>
+      Fill the 9×9 grid so that every row, every column and every 3×3 box contains the
+      digits 1 through 9 exactly once. Some cells start filled in ("givens") and can't be
+      changed; the rest are yours to complete using logic alone — no guessing required. Tap
+      or click a cell, then enter a number with the keypad or your keyboard. Use pencil-mark
+      notes to track candidate numbers in a cell, and lean on hints if you get stuck.
+    </p>
+
+    <h3>Sudoku variants in Sudoku Zen</h3>
+    <ul>
+      <li><strong>Classic Sudoku</strong> — the standard 9×9 rules.</li>
+      <li><strong>X-Sudoku</strong> — adds the two main diagonals as extra regions.</li>
+      <li><strong>Jigsaw Sudoku</strong> — irregular jigsaw-shaped regions instead of boxes.</li>
+      <li><strong>Killer Sudoku</strong> — cages with target sums replace some of the givens.</li>
+      <li><strong>Hyper Sudoku</strong> — four extra shaded 3×3 regions must also hold 1–9.</li>
+      <li><strong>Thermo Sudoku</strong> — digits must increase along thermometer paths.</li>
+      <li><strong>Arrow Sudoku</strong> — digits along an arrow must sum to the circled cell.</li>
+    </ul>
+
+    <h2>Daily Sudoku Challenge &amp; Leaderboards</h2>
+    <p>
+      Every day, Sudoku Zen generates one puzzle that everyone plays. Finish it to log your
+      time on the global daily leaderboard and see how you stack up against other players —
+      or switch to the weekly and all-time boards to track longer streaks.
+    </p>
+
+    <h2>Frequently Asked Questions</h2>
+    <h3>Is Sudoku Zen free to play?</h3>
+    <p>Yes — it's completely free, with no download, no signup and no paywalled puzzles.</p>
+    <h3>Does Sudoku Zen save my progress?</h3>
+    <p>Yes. Your board, statistics, achievements and settings are saved automatically in your browser.</p>
+    <h3>Can I play on my phone?</h3>
+    <p>Yes. Sudoku Zen is fully responsive and can be added to your home screen as an installable app.</p>
+  </section>
 
   <footer>
     <p>&copy; 2026 Sudoku Zen — Premium Sudoku Platform</p>

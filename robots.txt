@@ -1,4 +1,6 @@
 # Sudoku Zen - robots.txt
 User-agent: *
 Allow: /
-Sitemap: https://sudokuzen.app/sitemap.xml
+Disallow: /admin.html
+
+Sitemap: https://joudlight.github.io/Sudoku-Zen/sitemap.xml
