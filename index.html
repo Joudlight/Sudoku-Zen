@@ -7275,7 +7275,7 @@ SZ.UI = {
     // queue the post-win rating prompt. Both no-op safely if offline.
     if (SZ.Social && SZ.state.challengeType === 'daily') {
       const hintsUsedForSocial = SZ.state.hintsUsedCount;
-      SZ.Social.DailyAttempt.complete(SZ.state.userGrid, SZ.state.mistakes, hintsUsedForSocial)
+      SZ.Social.DailyAttempt.complete(SZ.state._flatBoard(), SZ.state.mistakes, hintsUsedForSocial)
         .then(result => { if (result) SZ.SocialUI.showRankToast(result.rank_today, result.time_seconds); });
     }
     if (SZ.SocialUI) {
