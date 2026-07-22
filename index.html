@@ -7647,16 +7647,18 @@ SZ.UI = {
     const shareText = customText || 'Play Sudoku Zen — premium puzzles with jigsaw, killer, thermo & more!';
     this._shareUrl = shareUrl;
     this._shareText = shareText;
-    const encoded = encodeURIComponent(shareUrl);
 
     // Set QR code
     document.getElementById('qrImg').src =
-      'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' + encoded;
+      'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' + encodeURIComponent(shareUrl);
 
     // Set copy link input
     document.getElementById('shareUrlInput').value = shareUrl;
 
-    // Bind social share buttons (rebind on each open so previous listeners don't stack)
+    // Bind social share buttons (rebind on each open so previous listeners don't stack).
+    // Buttons read this._shareUrl live at click time (rather than capturing
+    // it now) so that if link-shortening finishes after the overlay is
+    // already open, clicking a platform button still uses the short link.
     const grid = document.querySelector('.share-grid');
     const old = grid.querySelectorAll('.sbtn');
     for (const btn of old) {
@@ -7664,7 +7666,7 @@ SZ.UI = {
       btn.parentNode.replaceChild(clone, btn);
     }
     document.querySelectorAll('.sbtn').forEach(btn => {
-      btn.addEventListener('click', () => this._shareVia(btn.dataset.share, encoded, shareUrl));
+      btn.addEventListener('click', () => this._shareVia(btn.dataset.share));
     });
 
     // Copy link
@@ -7674,6 +7676,54 @@ SZ.UI = {
     newCopy.addEventListener('click', () => this._copyShareUrl());
 
     this.showOverlay('shareOverlay');
+
+    // Best-effort: shrink long puzzle-share links (?share=...) down to an
+    // is.gd short link. Fire-and-forget — the overlay above already shows
+    // a fully working long link, so nothing waits on this network call.
+    this._maybeShortenShareUrl(shareUrl);
+  },
+
+  /**
+   * Puzzle-share links (?share=...) embed the whole puzzle + solution and
+   * can still run 150-300+ characters even after compact packing — long
+   * enough to look "spammy" pasted into a chat. This shrinks that specific
+   * kind of link via the free is.gd shortening API (no signup/API key
+   * needed). The puzzle data itself isn't sensitive — it's just numbers
+   * describing a Sudoku grid — so sending it to is.gd to get a short
+   * redirect is a reasonable tradeoff for a much friendlier link.
+   *
+   * This is purely cosmetic and never blocks sharing: if the request is
+   * slow, blocked (e.g. by an ad blocker or offline), or the service
+   * errors, we silently keep the long link that's already showing.
+   */
+  async _maybeShortenShareUrl(longUrl) {
+    if (!longUrl.includes('?share=')) return; // plain app link is short already
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
+    try {
+      const api = 'https://is.gd/create.php?format=simple&url=' + encodeURIComponent(longUrl);
+      const res = await fetch(api, { signal: controller.signal });
+      const short = (await res.text()).trim();
+      // A success response is a bare https://is.gd/xxxx URL. Errors come
+      // back as plain text (e.g. "Error: ...") — anything that doesn't
+      // look like an is.gd URL is treated as a failure.
+      if (!/^https:\/\/is\.gd\/\S+$/.test(short)) return;
+      // Only apply if this is still the link the user is looking at —
+      // they may have closed the overlay and shared a different puzzle
+      // by the time this resolves.
+      if (this._shareUrl !== longUrl) return;
+      this._shareUrl = short;
+      const input = document.getElementById('shareUrlInput');
+      if (input && document.getElementById('shareOverlay').style.display !== 'none') {
+        input.value = short;
+      }
+      const qr = document.getElementById('qrImg');
+      if (qr) qr.src = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' + encodeURIComponent(short);
+    } catch (_) {
+      // Network error, CORS block, timeout, offline — keep the long link.
+    } finally {
+      clearTimeout(timeoutId);
+    }
   },
 
   /**
@@ -7704,28 +7754,27 @@ SZ.UI = {
     }
 
     const data = {
-      p:  SZ.state.puzzle,        // givens (flat array, 0 = empty)
-      so: SZ.state.solution,      // full solution (for answer-checking)
+      p:  this._encodeGrid(SZ.state.puzzle),   // givens, packed 1 base-36 char/cell
+      so: this._encodeGrid(SZ.state.solution), // solution, packed the same way
       v:  SZ.state.variant,
       s:  SZ.state.size,
       d:  SZ.state.difficulty,
       m:  SZ.state.mode,
       // Sharer's stats — shown to the recipient as a "beat this" challenge.
-      st: {
-        t:  SZ.state.timerSec,      // time in seconds
-        mm: SZ.state.mistakes,       // mistake count
-        h:  SZ.state.hintsUsedCount, // hints used
-      }
+      // Flattened (not nested under "st") to save a few more bytes.
+      t:  SZ.state.timerSec,      // time in seconds
+      mm: SZ.state.mistakes,       // mistake count
+      h:  SZ.state.hintsUsedCount, // hints used
     };
     // Constraints (Killer cages / Thermo paths / Arrow paths) — only present
     // for variant puzzles. Encoding them here guarantees the recipient sees
     // the same constraints even if the generator code has changed.
     if (SZ.state.constraints && SZ.state.constraints.length > 0) {
-      data.c = SZ.state.constraints;
+      data.c = this._encodeConstraints(SZ.state.constraints);
     }
     // Jigsaw regionMap — needed for jigsaw puzzles to have the right regions.
     if (SZ.state.regionMap) {
-      data.r = SZ.state.regionMap;
+      data.r = this._encodeGrid(SZ.state.regionMap);
     }
 
     const encoded = this._encodeShareData(data);
@@ -7745,6 +7794,69 @@ SZ.UI = {
     const text = `I solved a ${diffName}${variantName} (${sizeLabel}) Sudoku Zen puzzle in ${mmss} with ${SZ.state.mistakes} ${mistakeWord}${hintsPart}. Think you can beat it? Play the exact same puzzle:`;
 
     this.shareGame(url, text);
+  },
+
+  /** Pack a flat grid array (puzzle / solution / regionMap — values 0-16)
+   *  into a string with exactly ONE base-36 character per cell, e.g.
+   *  [5,7,1,0,0] → "57100". This is the single biggest space saver in the
+   *  share link: a JSON array like "[5,7,1,0,0,...]" spends ~2 characters
+   *  per cell on commas/digits, while this spends exactly 1. Safe for any
+   *  board size we support (max cell value 16 = single base-36 digit 'g').
+   */
+  _encodeGrid(arr) {
+    return arr.map(v => v.toString(36)).join('');
+  },
+
+  /** Reverse of _encodeGrid. Also accepts a plain array unchanged, so
+   *  older share links (created before this packing existed) still load. */
+  _decodeGrid(val) {
+    if (Array.isArray(val)) return val;
+    return String(val).split('').map(c => parseInt(c, 36));
+  },
+
+  /** Pack a list of cell indices (used inside constraints — killer cage
+   *  cells, thermo/arrow paths) into base-36 numbers joined by ".". Indices
+   *  can be up to 255 (16x16 board), so unlike _encodeGrid these need a
+   *  separator rather than fixed-width characters. */
+  _encodeIdxList(arr) {
+    return arr.map(n => n.toString(36)).join('.');
+  },
+
+  /** Reverse of _encodeIdxList. Accepts a plain array unchanged (old links). */
+  _decodeIdxList(val) {
+    if (Array.isArray(val)) return val;
+    return String(val).split('.').map(s => parseInt(s, 36));
+  },
+
+  /** Pack Killer/Thermo/Arrow constraint objects into short-keyed records
+   *  (type→t abbreviated, cells/path→c/p as base-36 index lists). Cuts
+   *  constraint size roughly in half on top of removing verbose keys. */
+  _encodeConstraints(constraints) {
+    const T = { killer: 'k', thermo: 'th', arrow: 'ar' };
+    return constraints.map(c => {
+      const rec = { t: T[c.type] || c.type };
+      if (c.cells) rec.c = this._encodeIdxList(c.cells);
+      if (c.path)  rec.p = this._encodeIdxList(c.path);
+      if (c.sum !== undefined) rec.s = c.sum;
+      if (c.circle !== undefined) rec.ci = c.circle;
+      return rec;
+    });
+  },
+
+  /** Reverse of _encodeConstraints. Also passes through old-format
+   *  constraint objects (which already have a "type" key) unchanged, so
+   *  links created before this packing existed still load correctly. */
+  _decodeConstraints(list) {
+    const T = { k: 'killer', th: 'thermo', ar: 'arrow' };
+    return list.map(rec => {
+      if (rec.type) return rec; // already old-format — pass through
+      const out = { type: T[rec.t] || rec.t };
+      if (rec.c !== undefined) out.cells = this._decodeIdxList(rec.c);
+      if (rec.p !== undefined) out.path = this._decodeIdxList(rec.p);
+      if (rec.s !== undefined) out.sum = rec.s;
+      if (rec.ci !== undefined) out.circle = rec.ci;
+      return out;
+    });
   },
 
   /** Encode a share-data object into a URL-safe base64 string.
@@ -7781,8 +7893,10 @@ SZ.UI = {
     }
   },
 
-  _shareVia(platform, encodedUrl, rawUrl) {
+  _shareVia(platform) {
     const e = s => encodeURIComponent(s);
+    const rawUrl = this._shareUrl || 'https://joudlight.github.io/Sudoku-Zen/';
+    const encodedUrl = e(rawUrl);
     const text = this._shareText || 'Play Sudoku Zen — premium puzzle platform';
     const links = {
       twitter:   `https://twitter.com/intent/tweet?text=${e(text)}&url=${encodedUrl}`,
@@ -7848,7 +7962,10 @@ SZ.UI = {
         }
         // Load the puzzle directly — no regeneration needed. We pass the
         // puzzle + solution + constraints + regionMap through newGame's
-        // opts so they're installed verbatim.
+        // opts so they're installed verbatim. _decodeGrid/_decodeConstraints
+        // transparently handle both the new packed format and the older
+        // plain-array format, so links shared before this packing existed
+        // still load correctly.
         const opts = {
           size: data.s,
           variant: data.v,
@@ -7856,17 +7973,20 @@ SZ.UI = {
           mode: data.m,
           challengeType: null,
           challengeDate: null,
-          solution: data.so,
-          puzzle: data.p,
-          constraints: data.c || null,
-          regionMap: data.r || null,
+          solution: this._decodeGrid(data.so),
+          puzzle: this._decodeGrid(data.p),
+          constraints: data.c ? this._decodeConstraints(data.c) : null,
+          regionMap: data.r ? this._decodeGrid(data.r) : null,
         };
         SZ.state.newGame(opts);
         this.startNewGame();
 
         // Show the sharer's stats as a "beat this" challenge banner.
-        if (data.st) {
-          this._showChallengerStats(data.st, data.d, data.v, data.s);
+        // New links flatten stats to top-level t/mm/h; old links nest
+        // them under "st" — support both.
+        const stats = data.st || (data.t !== undefined ? { t: data.t, mm: data.mm || 0, h: data.h || 0 } : null);
+        if (stats) {
+          this._showChallengerStats(stats, data.d, data.v, data.s);
         }
 
         // Clean the URL so a later refresh resumes via the save system
